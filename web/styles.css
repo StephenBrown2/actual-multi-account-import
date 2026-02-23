@@ -1,0 +1,264 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --panel-border: #dee2e8;
+  --text: #1f2937;
+  --muted: #5f6b7a;
+  --heading: #111827;
+  --line: #e5e7eb;
+  --input: #ffffff;
+  --input-border: #c9cfda;
+  --input-border-focus: #5a67d8;
+  --button: #4f5bd5;
+  --button-hover: #424cb4;
+  --button-disabled: #9fa8c3;
+  --table-header: #f0f2f6;
+}
+
+body {
+  margin: 0;
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.35;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app-shell {
+  max-width: 1040px;
+  margin: 20px auto;
+  padding: 0 12px 24px;
+}
+
+h1,
+h2,
+h3 {
+  margin-top: 0;
+  color: var(--heading);
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+h3 {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: #6b7280;
+  margin-bottom: 10px;
+}
+
+.subtitle {
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 1px rgba(17, 24, 39, 0.03);
+  padding: 12px;
+}
+
+.error-banner {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.error-banner h3 {
+  color: #b91c1c;
+}
+
+.error-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.error-message {
+  margin: 0 0 10px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+input,
+select,
+button {
+  margin-top: 4px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="file"],
+select {
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--input-border-focus);
+  box-shadow: 0 0 0 2px rgba(90, 103, 216, 0.15);
+}
+
+input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  margin: 0 6px 0 0;
+}
+
+button {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--button);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+button:hover {
+  background: var(--button-hover);
+}
+
+button:disabled {
+  background: var(--button-disabled);
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.hidden {
+  display: none;
+}
+
+.table-wrap {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: auto;
+  max-height: 360px;
+  background: #fff;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  padding: 7px 9px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--table-header);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #5b6472;
+  font-weight: 700;
+}
+
+tbody tr:hover td {
+  background: #f7f9fc;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+pre {
+  background: #0f172a;
+  color: #d1d9e6;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    margin-top: 12px;
+  }
+
+  .card {
+    padding: 10px;
+  }
+
+  .actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
