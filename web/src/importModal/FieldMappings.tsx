@@ -65,7 +65,7 @@ export function FieldMappings({
 
   return (
     <section className="card">
-      <h3>CSV FIELDS</h3>
+      <h3>CSV Fields</h3>
       <div className="mapping-grid">
         <MappingField
           title="Date"

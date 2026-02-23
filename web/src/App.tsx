@@ -6,6 +6,14 @@ import { applyFieldMappings, dateFormats, parseAmountFields, parseDate } from ".
 import type { DateFormat, FieldMapping, ImportTransaction } from "./importModal/utils";
 
 type Account = { id: string; name: string; closed?: boolean; offbudget?: boolean };
+
+type BudgetRef = { id: string | null; name: string; groupId?: string };
+
+type ConnectionStatus = {
+  connected: boolean;
+  budgetLoaded: boolean;
+  budgets?: BudgetRef[];
+};
 type PreviewResponse = {
   sessionId: string;
   format: string;
@@ -266,7 +274,7 @@ type AmountOptionsSectionProps = {
 function AmountOptionsSection({ form, onPatch }: AmountOptionsSectionProps): React.JSX.Element {
   return (
     <section className="card">
-      <h3>AMOUNT OPTIONS</h3>
+      <h3>Amount Options</h3>
       <div className="grid">
         <label>
           <input
@@ -469,6 +477,10 @@ function ImportSection({
 }
 
 export function App(): React.JSX.Element {
+  const [status, setStatus] = useState<ConnectionStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [selectBudgetLoading, setSelectBudgetLoading] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [transactions, setTransactions] = useState<ImportTransaction[]>([]);
@@ -512,6 +524,27 @@ export function App(): React.JSX.Element {
     form.multiplierAmount,
   ]);
 
+  async function fetchStatus(): Promise<void> {
+    setStatusLoading(true);
+    setError(null);
+    try {
+      const { ok, data } = await fetchJson<ConnectionStatus>("/api/status");
+      if (!ok) {
+        setStatus(null);
+        return;
+      }
+      setStatus({
+        connected: data.connected ?? false,
+        budgetLoaded: data.budgetLoaded ?? false,
+        budgets: data.budgets,
+      });
+    } catch {
+      setStatus(null);
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
   async function fetchAccounts(): Promise<void> {
     setError(null);
     try {
@@ -532,8 +565,16 @@ export function App(): React.JSX.Element {
   }
 
   React.useEffect(() => {
-    void fetchAccounts();
+    void fetchStatus();
   }, []);
+
+  React.useEffect(() => {
+    if (status?.budgetLoaded) {
+      void fetchAccounts();
+    } else {
+      setAccounts([]);
+    }
+  }, [status?.budgetLoaded]);
 
   async function onPreview(event: React.FormEvent): Promise<void> {
     event.preventDefault();
@@ -590,6 +631,69 @@ export function App(): React.JSX.Element {
       );
       setPreview(null);
       setTransactions([]);
+    }
+  }
+
+  async function onConnect(event: React.FormEvent): Promise<void> {
+    event.preventDefault();
+    const form = event.target as HTMLFormElement;
+    const serverURL = (
+      form.elements.namedItem("serverURL") as HTMLInputElement | null
+    )?.value?.trim();
+    const password = (form.elements.namedItem("password") as HTMLInputElement | null)?.value;
+    const sessionToken = (
+      form.elements.namedItem("sessionToken") as HTMLInputElement | null
+    )?.value?.trim();
+    if (!serverURL || (!password && !sessionToken)) {
+      setError("Enter server URL and either password or session token.");
+      return;
+    }
+    setError(null);
+    setConnectLoading(true);
+    try {
+      const { ok, data } = await fetchJson<{ connected?: boolean; budgets?: BudgetRef[] }>(
+        "/api/connect",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            serverURL,
+            password: password || undefined,
+            sessionToken: sessionToken || undefined,
+          }),
+        },
+      );
+      if (!ok) {
+        setError(formatApiError(data));
+        return;
+      }
+      setStatus({
+        connected: true,
+        budgetLoaded: false,
+        budgets: data.budgets ?? [],
+      });
+    } finally {
+      setConnectLoading(false);
+    }
+  }
+
+  async function onSelectBudget(budgetId: string): Promise<void> {
+    if (!budgetId) return;
+    setError(null);
+    setSelectBudgetLoading(true);
+    try {
+      const { ok, data } = await fetchJson<{ ok?: boolean }>("/api/select-budget", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ budgetId }),
+      });
+      if (!ok) {
+        setError(formatApiError(data));
+        return;
+      }
+      await fetchStatus();
+    } finally {
+      setSelectBudgetLoading(false);
     }
   }
 
@@ -661,7 +765,7 @@ export function App(): React.JSX.Element {
           <h3>Error</h3>
           <pre className="error-message">{error}</pre>
           <div className="error-actions">
-            {accounts.length === 0 && (
+            {status?.budgetLoaded && accounts.length === 0 && (
               <button type="button" onClick={() => void fetchAccounts()} aria-label="Retry loading">
                 Retry
               </button>
@@ -673,64 +777,140 @@ export function App(): React.JSX.Element {
         </section>
       )}
 
-      <ParseOptionsSection
-        form={form}
-        onSubmit={onPreview}
-        onPatch={(patch) => dispatch({ type: "PATCH", patch })}
-      />
-
-      {preview && (
-        <>
-          <FieldMappings
-            transactions={transactions}
-            mappings={form.mapping}
-            onChange={(field, newValue) =>
-              dispatch({
-                type: "SET_MAPPING_FIELD",
-                field,
-                value: newValue || null,
-              })
-            }
-            splitMode={form.splitMode}
-            inOutMode={form.inOutMode}
-            hasHeaderRow={form.hasHeaderRow}
-          />
-
-          <AmountOptionsSection
-            form={form}
-            onPatch={(patch) => dispatch({ type: "PATCH", patch })}
-          />
-
-          <AccountMappingSection
-            form={form}
-            accounts={accounts}
-            uniqueAccountValues={preview.uniqueAccountValues}
-            onPatch={(patch) => dispatch({ type: "PATCH", patch })}
-            onAccountValueMapChange={(sourceValue, accountId) =>
-              dispatch({
-                type: "SET_ACCOUNT_VALUE_MAP",
-                sourceValue,
-                accountId,
-              })
-            }
-          />
-
-          <PreviewSection preview={preview} previewRows={previewRows} />
-
-          <ImportSection
-            form={form}
-            selectedCount={selectedCount}
-            onPatch={(patch) => dispatch({ type: "PATCH", patch })}
-            onImport={onImport}
-          />
-        </>
-      )}
-
-      {result !== null && (
+      {statusLoading ? (
         <section className="card">
-          <h2>Result</h2>
-          <pre>{result}</pre>
+          <p>Checking connection…</p>
         </section>
+      ) : !status?.connected ? (
+        <section className="card">
+          <h2>Connect to Actual</h2>
+          <p className="subtitle">
+            Enter your Actual server URL and password (or session token) to connect.
+          </p>
+          <form onSubmit={(e) => void onConnect(e)}>
+            <label>
+              Server URL
+              <input
+                type="url"
+                name="serverURL"
+                placeholder="https://your-actual-server.com"
+                required
+              />
+            </label>
+            <label>
+              Password
+              <input type="password" name="password" placeholder="(optional if using token)" />
+            </label>
+            <label>
+              Session token
+              <input type="text" name="sessionToken" placeholder="(optional if using password)" />
+            </label>
+            <button type="submit" disabled={connectLoading}>
+              {connectLoading ? "Connecting…" : "Connect"}
+            </button>
+          </form>
+        </section>
+      ) : !status.budgetLoaded ? (
+        <section className="card">
+          <h2>Select budget</h2>
+          <p className="subtitle">Choose which Actual budget to use for this import session.</p>
+          {status.budgets && status.budgets.length > 0 ? (
+            <div className="grid">
+              <label>
+                Budget
+                <select
+                  id="setup-budget-select"
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (id) void onSelectBudget(id);
+                  }}
+                  disabled={selectBudgetLoading}
+                >
+                  <option value="">— Select a budget —</option>
+                  {status.budgets
+                    .filter((b) => b.id)
+                    .map((b) => (
+                      <option key={b.id!} value={b.id!}>
+                        {b.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {selectBudgetLoading && <p>Loading budget…</p>}
+              {status.budgets.some((b) => !b.id) && (
+                <p className="muted">
+                  Some budgets are only available in the cloud; set ACTUAL_SYNC_ID for those.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p>No budgets found. Create a budget in Actual first.</p>
+          )}
+        </section>
+      ) : null}
+
+      {status?.budgetLoaded && (
+        <>
+          <ParseOptionsSection
+            form={form}
+            onSubmit={onPreview}
+            onPatch={(patch) => dispatch({ type: "PATCH", patch })}
+          />
+
+          {preview && (
+            <>
+              <FieldMappings
+                transactions={transactions}
+                mappings={form.mapping}
+                onChange={(field, newValue) =>
+                  dispatch({
+                    type: "SET_MAPPING_FIELD",
+                    field,
+                    value: newValue || null,
+                  })
+                }
+                splitMode={form.splitMode}
+                inOutMode={form.inOutMode}
+                hasHeaderRow={form.hasHeaderRow}
+              />
+
+              <AmountOptionsSection
+                form={form}
+                onPatch={(patch) => dispatch({ type: "PATCH", patch })}
+              />
+
+              <AccountMappingSection
+                form={form}
+                accounts={accounts}
+                uniqueAccountValues={preview.uniqueAccountValues}
+                onPatch={(patch) => dispatch({ type: "PATCH", patch })}
+                onAccountValueMapChange={(sourceValue, accountId) =>
+                  dispatch({
+                    type: "SET_ACCOUNT_VALUE_MAP",
+                    sourceValue,
+                    accountId,
+                  })
+                }
+              />
+
+              <PreviewSection preview={preview} previewRows={previewRows} />
+
+              <ImportSection
+                form={form}
+                selectedCount={selectedCount}
+                onPatch={(patch) => dispatch({ type: "PATCH", patch })}
+                onImport={onImport}
+              />
+            </>
+          )}
+
+          {result !== null && (
+            <section className="card">
+              <h2>Result</h2>
+              <pre>{result}</pre>
+            </section>
+          )}
+        </>
       )}
     </main>
   );

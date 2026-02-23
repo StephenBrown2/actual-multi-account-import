@@ -7,7 +7,16 @@ import dotenv from "dotenv";
 import express, { type Request, type Response } from "express";
 import multer from "multer";
 
-import { closeActual, importIntoAccount, initActual, listAccounts } from "./actual/client";
+import {
+  closeActual,
+  importIntoAccount,
+  initActual,
+  isBudgetLoaded,
+  isConnected,
+  listAccounts,
+  listBudgets,
+  selectBudget,
+} from "./actual/client";
 import { toUserFacingError } from "./errors";
 
 function asyncHandler(
@@ -74,18 +83,17 @@ function parseImportOptionsFromBody(body: Record<string, unknown>): ParseFileOpt
   };
 }
 
-async function initializeFromEnv(): Promise<void> {
+async function tryInitializeFromEnv(): Promise<void> {
   const serverURL = process.env.ACTUAL_SERVER_URL;
-  if (!serverURL) {
-    throw new Error(
-      "ACTUAL_SERVER_URL is required. Set it in your environment or .env file (e.g. ACTUAL_SERVER_URL=https://your-actual-server.com).",
-    );
+  const password = process.env.ACTUAL_PASSWORD;
+  const sessionToken = process.env.ACTUAL_SESSION_TOKEN;
+  if (!serverURL || (!password && !sessionToken)) {
+    return;
   }
-
   await initActual({
     serverURL,
-    password: process.env.ACTUAL_PASSWORD,
-    sessionToken: process.env.ACTUAL_SESSION_TOKEN,
+    password,
+    sessionToken,
     dataDir: process.env.ACTUAL_DATA_DIR,
     budgetId: process.env.ACTUAL_BUDGET_ID,
     budgetName: process.env.ACTUAL_BUDGET_NAME,
@@ -103,20 +111,19 @@ function cleanupExpiredSessions(ttlMs = 30 * 60 * 1000): void {
 }
 
 async function bootstrap(): Promise<void> {
-  try {
-    await initializeFromEnv();
-  } catch (err) {
-    const { message, hint } = toUserFacingError(err);
-    console.error(message);
-    if (hint) console.error(hint);
-    process.exit(1);
-  }
   if (!existsSync(join(webRoot, "index.html"))) {
     console.error(
       "Web UI not built. Run 'npm run web:build' or 'npm run server' (which builds automatically) before starting. Expected files at:",
       webRoot,
     );
     process.exit(1);
+  }
+  try {
+    await tryInitializeFromEnv();
+  } catch (err) {
+    const { message, hint } = toUserFacingError(err);
+    console.warn("Could not initialize from environment:", message);
+    if (hint) console.warn(hint);
   }
 }
 
@@ -135,8 +142,132 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get(
+  "/api/status",
+  asyncHandler(async (_req, res) => {
+    const connected = isConnected();
+    const budgetLoaded = isBudgetLoaded();
+    let budgets: Array<{ id: string | null; name: string; groupId?: string }> = [];
+    if (connected) {
+      try {
+        budgets = await listBudgets();
+      } catch {
+        budgets = [];
+      }
+    }
+    res.json({
+      connected,
+      budgetLoaded,
+      budgets: connected ? budgets : undefined,
+    });
+  }),
+);
+
+app.post(
+  "/api/connect",
+  asyncHandler(async (req, res) => {
+    if (isConnected()) {
+      sendError(
+        res,
+        400,
+        "Already connected.",
+        "Server is already connected to an Actual instance.",
+      );
+      return;
+    }
+    const body = req.body as {
+      serverURL?: string;
+      password?: string;
+      sessionToken?: string;
+      dataDir?: string;
+    };
+    const serverURL = typeof body.serverURL === "string" ? body.serverURL.trim() : "";
+    const password = typeof body.password === "string" ? body.password : undefined;
+    const sessionToken =
+      typeof body.sessionToken === "string" ? body.sessionToken.trim() : undefined;
+    if (!serverURL || (!password && !sessionToken)) {
+      sendError(
+        res,
+        400,
+        "Missing server URL or credentials.",
+        "Provide serverURL and either password or sessionToken.",
+      );
+      return;
+    }
+    try {
+      await initActual({
+        serverURL,
+        password,
+        sessionToken,
+        dataDir: body.dataDir,
+      });
+    } catch (err) {
+      const { message, hint } = toUserFacingError(err);
+      sendError(res, 400, message, hint);
+      return;
+    }
+    const budgets = await listBudgets();
+    res.json({ connected: true, budgets });
+  }),
+);
+
+app.get(
+  "/api/budgets",
+  asyncHandler(async (_req, res) => {
+    if (!isConnected()) {
+      sendError(
+        res,
+        503,
+        "Not connected.",
+        "Connect to an Actual server first (use the setup form).",
+      );
+      return;
+    }
+    const budgets = await listBudgets();
+    res.json({ budgets });
+  }),
+);
+
+app.post(
+  "/api/select-budget",
+  asyncHandler(async (req, res) => {
+    if (!isConnected()) {
+      sendError(res, 503, "Not connected.", "Connect to an Actual server first.");
+      return;
+    }
+    const budgetId =
+      typeof (req.body as { budgetId?: string }).budgetId === "string"
+        ? (req.body as { budgetId: string }).budgetId.trim()
+        : "";
+    if (!budgetId) {
+      sendError(res, 400, "Missing budgetId.", "Provide a budget ID from the budgets list.");
+      return;
+    }
+    try {
+      await selectBudget(budgetId);
+    } catch (err) {
+      const { message, hint } = toUserFacingError(err);
+      sendError(res, 400, message, hint);
+      return;
+    }
+    res.json({ ok: true, budgetLoaded: true });
+  }),
+);
+
+app.get(
   "/api/accounts",
   asyncHandler(async (_req, res) => {
+    if (!isBudgetLoaded()) {
+      const connected = isConnected();
+      sendError(
+        res,
+        503,
+        connected ? "No budget selected." : "Not connected.",
+        connected
+          ? "Select a budget from the setup section above."
+          : "Connect to an Actual server and select a budget.",
+      );
+      return;
+    }
     const accounts = await listAccounts();
     res.json({
       accounts,
@@ -149,6 +280,18 @@ app.post(
   "/api/preview",
   upload.single("file"),
   asyncHandler(async (req, res) => {
+    if (!isBudgetLoaded()) {
+      const connected = isConnected();
+      sendError(
+        res,
+        503,
+        connected ? "No budget selected." : "Not connected.",
+        connected
+          ? "Select a budget from the setup section above."
+          : "Connect to an Actual server and select a budget.",
+      );
+      return;
+    }
     cleanupExpiredSessions();
     if (!req.file) {
       sendError(
@@ -203,6 +346,18 @@ app.post(
 app.post(
   "/api/import",
   asyncHandler(async (req, res) => {
+    if (!isBudgetLoaded()) {
+      const connected = isConnected();
+      sendError(
+        res,
+        503,
+        connected ? "No budget selected." : "Not connected.",
+        connected
+          ? "Select a budget from the setup section above."
+          : "Connect to an Actual server and select a budget.",
+      );
+      return;
+    }
     const body = req.body as ImportBody;
     const session = sessions.get(body.sessionId ?? "");
     if (!session) {

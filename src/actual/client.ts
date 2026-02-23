@@ -19,6 +19,7 @@ import type {
 } from "../types";
 
 let initialized = false;
+let budgetLoaded = false;
 
 async function ensureDataDirExists(dataDir?: string) {
   if (!dataDir) {
@@ -66,14 +67,7 @@ async function pickAndLoadBudget(opts: ConnectionOptions) {
   }
 
   if (!selected) {
-    const printable = budgets.map((b) => `${b.id ?? "no-id"} :: ${b.name}`).join("\n");
-    throw new Error(
-      [
-        "Unable to resolve budget.",
-        "Provide --budget-id or --budget-name, or ensure only one local budget is available.",
-        `Available budgets:\n${printable || "(none found)"}`,
-      ].join("\n"),
-    );
+    return null;
   }
 
   if (!selected.id) {
@@ -99,10 +93,41 @@ async function pickAndLoadBudget(opts: ConnectionOptions) {
   }
 
   await loadBudget(selected.id);
+  budgetLoaded = true;
   return selected;
 }
 
-export async function initActual(opts: ConnectionOptions) {
+export function isBudgetLoaded(): boolean {
+  return initialized && budgetLoaded;
+}
+
+export function isConnected(): boolean {
+  return initialized;
+}
+
+export async function listBudgets(): Promise<
+  Array<{ id: string | null; name: string; groupId?: string }>
+> {
+  if (!initialized) {
+    throw new Error("Not connected to Actual. Connect first.");
+  }
+  const budgets = await getBudgets();
+  return budgets.map((b) => ({
+    id: b.id ?? null,
+    name: b.name,
+    groupId: (b as { groupId?: string }).groupId,
+  }));
+}
+
+export async function selectBudget(budgetId: string): Promise<void> {
+  if (!initialized) {
+    throw new Error("Not connected to Actual. Connect first.");
+  }
+  await loadBudget(budgetId);
+  budgetLoaded = true;
+}
+
+export async function initActual(opts: ConnectionOptions): Promise<void> {
   if (initialized) {
     return;
   }
@@ -122,19 +147,27 @@ export async function initActual(opts: ConnectionOptions) {
       };
 
   await init(initConfig);
-  await pickAndLoadBudget(opts);
+  budgetLoaded = false;
+  const selected = await pickAndLoadBudget(opts);
+  if (selected) {
+    budgetLoaded = true;
+  }
   initialized = true;
 }
 
-export async function closeActual() {
+export async function closeActual(): Promise<void> {
   if (!initialized) {
     return;
   }
   await shutdown();
   initialized = false;
+  budgetLoaded = false;
 }
 
 export async function listAccounts(): Promise<AccountRef[]> {
+  if (!budgetLoaded) {
+    throw new Error("No budget loaded. Select a budget first.");
+  }
   const accounts = await getAccounts();
   return accounts.map((account) => ({
     id: account.id,
@@ -148,6 +181,9 @@ export async function parseFileWithActual(
   filepath: string,
   options: ParseFileOptions,
 ): Promise<ParsedFileResult> {
+  if (!budgetLoaded) {
+    throw new Error("No budget loaded. Select a budget first.");
+  }
   const result = (await internal.send("transactions-parse-file", {
     filepath,
     options,
@@ -159,7 +195,10 @@ export async function importIntoAccount(
   accountId: string,
   transactions: PreparedImportTransaction[],
   dryRun: boolean,
-) {
+): Promise<unknown> {
+  if (!budgetLoaded) {
+    throw new Error("No budget loaded. Select a budget first.");
+  }
   const payload = transactions.map((txn) => ({ ...txn, account: accountId }));
   return importTransactions(accountId, payload, { dryRun });
 }
