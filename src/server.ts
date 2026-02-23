@@ -9,13 +9,15 @@ import multer from "multer";
 
 import {
   closeActual,
+  getCurrentBudgetId,
   importIntoAccount,
   initActual,
   isBudgetLoaded,
   isConnected,
   listAccounts,
   listBudgets,
-  selectBudget,
+  selectBudgetByIdOrSyncId,
+  verifyConnection,
 } from "./actual/client";
 import { toUserFacingError } from "./errors";
 
@@ -31,6 +33,13 @@ import { buildPreviewPayload, parseAndNormalizeFile } from "./import/parse";
 import type { FieldMapping, MappingRequest, NormalizedRow, ParseFileOptions } from "./types";
 
 dotenv.config();
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+  if (reason instanceof Error) {
+    console.error(reason.stack);
+  }
+});
 
 type PreviewSession = {
   id: string;
@@ -48,6 +57,8 @@ type ImportBody = {
 };
 
 const sessions = new Map<string, PreviewSession>();
+/** Password from last POST /api/connect, used when selecting a cloud budget. Not persisted. */
+let lastConnectPassword: string | undefined;
 const webRoot = join(import.meta.dirname, "..", "web", "dist");
 const upload = multer({ dest: "/tmp" });
 
@@ -146,7 +157,8 @@ app.get(
   asyncHandler(async (_req, res) => {
     const connected = isConnected();
     const budgetLoaded = isBudgetLoaded();
-    let budgets: Array<{ id: string | null; name: string; groupId?: string }> = [];
+    const currentBudgetId = getCurrentBudgetId();
+    let budgets: Array<{ id: string | null; name: string; groupId?: string; syncId?: string }> = [];
     if (connected) {
       try {
         budgets = await listBudgets();
@@ -157,6 +169,7 @@ app.get(
     res.json({
       connected,
       budgetLoaded,
+      currentBudgetId: budgetLoaded ? currentBudgetId : undefined,
       budgets: connected ? budgets : undefined,
     });
   }),
@@ -200,13 +213,14 @@ app.post(
         sessionToken,
         dataDir: body.dataDir,
       });
+      await verifyConnection();
+      lastConnectPassword = password;
+      const budgets = await listBudgets();
+      res.json({ connected: true, budgets });
     } catch (err) {
       const { message, hint } = toUserFacingError(err);
       sendError(res, 400, message, hint);
-      return;
     }
-    const budgets = await listBudgets();
-    res.json({ connected: true, budgets });
   }),
 );
 
@@ -234,16 +248,28 @@ app.post(
       sendError(res, 503, "Not connected.", "Connect to an Actual server first.");
       return;
     }
-    const budgetId =
-      typeof (req.body as { budgetId?: string }).budgetId === "string"
-        ? (req.body as { budgetId: string }).budgetId.trim()
-        : "";
-    if (!budgetId) {
-      sendError(res, 400, "Missing budgetId.", "Provide a budget ID from the budgets list.");
+    const body = req.body as { budgetId?: string; syncId?: string; password?: string };
+    const budgetId = typeof body.budgetId === "string" ? body.budgetId.trim() : undefined;
+    const syncId = typeof body.syncId === "string" ? body.syncId.trim() : undefined;
+    const password =
+      typeof body.password === "string"
+        ? body.password
+        : lastConnectPassword ?? process.env.ACTUAL_PASSWORD;
+    if (!budgetId && !syncId) {
+      sendError(
+        res,
+        400,
+        "Missing budgetId or syncId.",
+        "Select a budget from the list (local or cloud).",
+      );
       return;
     }
     try {
-      await selectBudget(budgetId);
+      await selectBudgetByIdOrSyncId({
+        budgetId: budgetId || undefined,
+        syncId: syncId || undefined,
+        password,
+      });
     } catch (err) {
       const { message, hint } = toUserFacingError(err);
       sendError(res, 400, message, hint);

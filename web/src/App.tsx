@@ -1,4 +1,4 @@
-import React, { useMemo, useReducer, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { fetchJson, formatApiError } from "./api";
 import { FieldMappings } from "./importModal/FieldMappings";
@@ -7,11 +7,18 @@ import type { DateFormat, FieldMapping, ImportTransaction } from "./importModal/
 
 type Account = { id: string; name: string; closed?: boolean; offbudget?: boolean };
 
-type BudgetRef = { id: string | null; name: string; groupId?: string };
+type BudgetRef = {
+  id: string | null;
+  name: string;
+  groupId?: string;
+  cloudFileId?: string;
+  syncId?: string;
+};
 
 type ConnectionStatus = {
   connected: boolean;
   budgetLoaded: boolean;
+  currentBudgetId?: string | null;
   budgets?: BudgetRef[];
 };
 type PreviewResponse = {
@@ -184,13 +191,24 @@ type ParseOptionsSectionProps = {
   form: FormState;
   onSubmit: (event: React.FormEvent) => void;
   onPatch: (patch: Partial<FormState>) => void;
+  /** When this changes, the file input is reset (e.g. when switching budgets). */
+  fileResetTrigger?: string;
 };
 
 function ParseOptionsSection({
   form,
   onSubmit,
   onPatch,
+  fileResetTrigger,
 }: ParseOptionsSectionProps): React.JSX.Element {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (fileResetTrigger !== undefined && fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, [fileResetTrigger]);
+
   return (
     <section className="card">
       <h2>1) Select File and Parse Options</h2>
@@ -198,6 +216,7 @@ function ParseOptionsSection({
         <label>
           Import file
           <input
+            ref={fileInputRef}
             type="file"
             required
             onChange={(event) => onPatch({ file: event.target.files?.[0] ?? null })}
@@ -536,6 +555,7 @@ export function App(): React.JSX.Element {
       setStatus({
         connected: data.connected ?? false,
         budgetLoaded: data.budgetLoaded ?? false,
+        currentBudgetId: data.currentBudgetId,
         budgets: data.budgets,
       });
     } catch {
@@ -677,15 +697,19 @@ export function App(): React.JSX.Element {
     }
   }
 
-  async function onSelectBudget(budgetId: string): Promise<void> {
-    if (!budgetId) return;
+  async function onSelectBudget(value: string): Promise<void> {
+    if (!value) return;
     setError(null);
     setSelectBudgetLoading(true);
     try {
+      const isSync = value.startsWith("sync:");
+      const body = isSync
+        ? { syncId: value.slice(5) }
+        : { budgetId: value };
       const { ok, data } = await fetchJson<{ ok?: boolean }>("/api/select-budget", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ budgetId }),
+        body: JSON.stringify(body),
       });
       if (!ok) {
         setError(formatApiError(data));
@@ -695,6 +719,16 @@ export function App(): React.JSX.Element {
     } finally {
       setSelectBudgetLoading(false);
     }
+  }
+
+  async function onSelectBudgetForImport(value: string): Promise<void> {
+    if (!value || value === status?.currentBudgetId) return;
+    setPreview(null);
+    setTransactions([]);
+    setResult(null);
+    dispatch({ type: "PATCH", patch: INITIAL_FORM_STATE });
+    await onSelectBudget(value);
+    void fetchAccounts();
   }
 
   async function onImport(): Promise<void> {
@@ -821,40 +855,76 @@ export function App(): React.JSX.Element {
                 <select
                   id="setup-budget-select"
                   onChange={(e) => {
-                    const id = e.target.value;
-                    if (id) void onSelectBudget(id);
+                    const value = e.target.value;
+                    if (value) void onSelectBudget(value);
                   }}
                   disabled={selectBudgetLoading}
                 >
                   <option value="">— Select a budget —</option>
-                  {status.budgets
-                    .filter((b) => b.id)
-                    .map((b) => (
-                      <option key={b.id!} value={b.id!}>
-                        {b.name}
+                  {status.budgets.map((b) => {
+                    const value = b.id ?? (b.syncId ? `sync:${b.syncId}` : "");
+                    if (!value) return null;
+                    const label = b.id ? b.name : `${b.name} (sync from server)`;
+                    return (
+                      <option key={value} value={value}>
+                        {label}
                       </option>
-                    ))}
+                    );
+                  })}
                 </select>
               </label>
               {selectBudgetLoading && <p>Loading budget…</p>}
-              {status.budgets.some((b) => !b.id) && (
+              {status.budgets.some((b) => !b.id && b.syncId) && (
                 <p className="muted">
-                  Some budgets are only available in the cloud; set ACTUAL_SYNC_ID for those.
+                  Server-only budgets will be downloaded when selected.
                 </p>
               )}
             </div>
           ) : (
-            <p>No budgets found. Create a budget in Actual first.</p>
+            <p>No budgets found. Create a budget in Actual, or check the server URL and password.</p>
           )}
         </section>
       ) : null}
 
       {status?.budgetLoaded && (
         <>
+          {status.budgets && status.budgets.length > 0 && (
+            <section className="card">
+              <h2>Budget</h2>
+              <div className="grid">
+                <label>
+                  Active budget
+                  <select
+                    id="import-budget-select"
+                    value={status.currentBudgetId ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value) void onSelectBudgetForImport(value);
+                    }}
+                    disabled={selectBudgetLoading}
+                  >
+                    {status.budgets.map((b) => {
+                      const value = b.id ?? (b.syncId ? `sync:${b.syncId}` : "");
+                      if (!value) return null;
+                      const label = b.id ? b.name : `${b.name} (sync from server)`;
+                      return (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                {selectBudgetLoading && <p>Switching budget…</p>}
+              </div>
+            </section>
+          )}
+
           <ParseOptionsSection
             form={form}
             onSubmit={onPreview}
             onPatch={(patch) => dispatch({ type: "PATCH", patch })}
+            fileResetTrigger={status?.currentBudgetId ?? undefined}
           />
 
           {preview && (

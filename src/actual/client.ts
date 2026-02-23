@@ -20,6 +20,7 @@ import type {
 
 let initialized = false;
 let budgetLoaded = false;
+let currentBudgetId: string | null = null;
 
 async function ensureDataDirExists(dataDir?: string) {
   if (!dataDir) {
@@ -93,8 +94,13 @@ async function pickAndLoadBudget(opts: ConnectionOptions) {
   }
 
   await loadBudget(selected.id);
+  currentBudgetId = selected.id;
   budgetLoaded = true;
   return selected;
+}
+
+export function getCurrentBudgetId(): string | null {
+  return currentBudgetId;
 }
 
 export function isBudgetLoaded(): boolean {
@@ -105,18 +111,42 @@ export function isConnected(): boolean {
   return initialized;
 }
 
-export async function listBudgets(): Promise<
-  Array<{ id: string | null; name: string; groupId?: string }>
-> {
+type BudgetListItem = {
+  id: string | null;
+  name: string;
+  groupId?: string;
+  cloudFileId?: string;
+  /** Sync id to use for download (groupId or cloudFileId). */
+  syncId?: string;
+};
+
+export async function listBudgets(): Promise<BudgetListItem[]> {
   if (!initialized) {
     throw new Error("Not connected to Actual. Connect first.");
   }
   const budgets = await getBudgets();
-  return budgets.map((b) => ({
-    id: b.id ?? null,
-    name: b.name,
-    groupId: (b as { groupId?: string }).groupId,
-  }));
+  return budgets.map((b) => {
+    const row = b as { id?: string; name: string; groupId?: string; cloudFileId?: string };
+    const syncId = row.groupId ?? row.cloudFileId;
+    return {
+      id: row.id ?? null,
+      name: row.name,
+      groupId: row.groupId,
+      cloudFileId: row.cloudFileId,
+      syncId: syncId ?? undefined,
+    };
+  });
+}
+
+/**
+ * Verify the connection by listing budgets (works without a budget loaded).
+ * getServerVersion() requires a budget to be open, so we use getBudgets() instead.
+ */
+export async function verifyConnection(): Promise<void> {
+  if (!initialized) {
+    throw new Error("Not connected to Actual. Connect first.");
+  }
+  await getBudgets();
 }
 
 export async function selectBudget(budgetId: string): Promise<void> {
@@ -124,6 +154,41 @@ export async function selectBudget(budgetId: string): Promise<void> {
     throw new Error("Not connected to Actual. Connect first.");
   }
   await loadBudget(budgetId);
+  budgetLoaded = true;
+}
+
+/**
+ * Select a budget by local id or by sync id (downloads from cloud if needed).
+ * When syncId is provided, password is used for downloadBudget.
+ */
+export async function selectBudgetByIdOrSyncId(
+  opts: { budgetId?: string; syncId?: string; password?: string },
+): Promise<void> {
+  if (!initialized) {
+    throw new Error("Not connected to Actual. Connect first.");
+  }
+  const { budgetId, syncId, password } = opts;
+  if (budgetId) {
+    await loadBudget(budgetId);
+    currentBudgetId = budgetId;
+    budgetLoaded = true;
+    return;
+  }
+  if (!syncId) {
+    throw new Error("Provide either budgetId or syncId.");
+  }
+  await downloadBudget(syncId, password ? { password } : undefined);
+  const budgets = await getBudgets();
+  const budget = budgets.find(
+    (b) => (b as { id?: string; groupId?: string; cloudFileId?: string }).groupId === syncId
+      || (b as { cloudFileId?: string }).cloudFileId === syncId,
+  );
+  const id = budget && (budget as { id?: string }).id;
+  if (!id) {
+    throw new Error("Budget was downloaded but could not be loaded. Try selecting it again.");
+  }
+  await loadBudget(id);
+  currentBudgetId = id;
   budgetLoaded = true;
 }
 
@@ -147,9 +212,11 @@ export async function initActual(opts: ConnectionOptions): Promise<void> {
       };
 
   await init(initConfig);
+  currentBudgetId = null;
   budgetLoaded = false;
   const selected = await pickAndLoadBudget(opts);
   if (selected) {
+    currentBudgetId = (selected as { id?: string }).id ?? null;
     budgetLoaded = true;
   }
   initialized = true;
@@ -162,6 +229,7 @@ export async function closeActual(): Promise<void> {
   await shutdown();
   initialized = false;
   budgetLoaded = false;
+  currentBudgetId = null;
 }
 
 export async function listAccounts(): Promise<AccountRef[]> {

@@ -12,6 +12,12 @@ function extractMessage(err: unknown): string {
   if (err instanceof Error) {
     return err.message;
   }
+  if (err && typeof err === "object") {
+    const o = err as Record<string, unknown>;
+    if (typeof o.message === "string") return o.message;
+    if (typeof o.error === "string") return o.error;
+    if (typeof o.msg === "string") return o.msg;
+  }
   return String(err);
 }
 
