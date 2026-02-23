@@ -9,11 +9,11 @@ Supported input extensions (through Actual's parser): `.csv`, `.tsv`, `.qif`, `.
 
 ## Requirements
 
-- Bun 1.3+
-- Node.js 20+ (runtime for `@actual-app/api`/`better-sqlite3`)
-- React + Vite frontend build (handled by npm scripts in this repo)
-- Reachable Actual server
-- Actual credentials (`ACTUAL_PASSWORD` or `ACTUAL_SESSION_TOKEN`)
+- **Bun 1.3+** — used for installing dependencies (`bun install`) and running tests (`bun test`)
+- **Node.js 20+** — required to run the server and CLI; `@actual-app/api` depends on `better-sqlite3`, which runs on Node
+- Reachable Actual server and credentials (`ACTUAL_PASSWORD` or `ACTUAL_SESSION_TOKEN`)
+
+The web server and CLI are executed via Node (using `tsx`). The Justfile and `package.json` scripts use `npm run` for those commands; use `just web`, `just cli`, etc., or run `npm run server` / `npm run cli` directly.
 
 ## Install
 
@@ -113,38 +113,63 @@ Important options:
 
 ## Docker
 
-Build locally:
+You can run the importer as a container using either `docker run` or Docker Compose. Use the image from GitHub Container Registry (GHCR) or build it locally.
+
+### Run with `docker run`
+
+**Using the image from GHCR** (after CI has published it; replace `owner/repo` with your GitHub org/repo, e.g. `stephenbrown2/actual-multi-account-import`):
+
+```bash
+docker run --rm -p 3000:3000 \
+  -e ACTUAL_SERVER_URL=https://your-actual-server.com \
+  -e ACTUAL_PASSWORD=your-password \
+  -e ACTUAL_DATA_DIR=/data \
+  -v actual_importer_data:/data \
+  ghcr.io/owner/repo:latest
+```
+
+Then open `http://localhost:3000`. Add `-e ACTUAL_BUDGET_NAME="Your Budget"` (or `ACTUAL_BUDGET_ID`) if you have multiple budgets.
+
+**Using a locally built image:**
 
 ```bash
 just docker-build
-```
-
-Run server in Docker:
-
-```bash
 just docker-run
 ```
 
-`docker-compose.example.yml` includes a complete baseline setup.
+`docker-run` uses `.env` for environment variables and publishes port 3000.
 
-Run compose example:
+### Run with Docker Compose
 
-```bash
-just compose-up
-```
+1. Copy the example Compose file and set your environment:
 
-Stop compose example:
+   ```bash
+   cp docker-compose.example.yml docker-compose.yml
+   # Edit docker-compose.yml: set ACTUAL_SERVER_URL and ACTUAL_PASSWORD (image is already set for this repo)
+   ```
 
-```bash
-just compose-down
-```
+2. Start the service:
+
+   ```bash
+   docker compose up -d
+   ```
+
+   Or use the Just recipe (uses the example file as-is; edit `docker-compose.example.yml` or pass your own file):
+
+   ```bash
+   just compose-up
+   ```
+
+3. Open `http://localhost:3000`. Stop with `docker compose down` or `just compose-down`.
+
+The example Compose file uses a named volume for `ACTUAL_DATA_DIR` and exposes port 3000. To run the CLI inside the container instead of the web server, see the commented `command` and `volumes` in `docker-compose.example.yml`.
 
 ## GHCR Publishing
 
 On pushes to `main`, GitHub Actions builds and pushes:
 
 - `ghcr.io/<owner>/<repo>:latest`
-- `ghcr.io/<owner>/<repo>:sha-<shortsha>`
+- `ghcr.io/<owner>/<repo>:<commit-sha>` (full Git SHA)
 
 Workflow file: `.github/workflows/publish-ghcr.yml`
 
@@ -159,6 +184,6 @@ just verify
 ```bash
 just lint
 just lint-fix
-just format
 just format-check
+just format
 ```

@@ -1,7 +1,7 @@
 services:
   actual-multi-account-import:
-    image: ghcr.io/your-org/actual-multi-account-import:latest
-    # Build locally instead of pulling:
+    image: ghcr.io/stephenbrown2/actual-multi-account-import:latest
+    # Build locally instead of pulling from GHCR:
     # build:
     #   context: .
     #   dockerfile: Dockerfile
@@ -10,32 +10,18 @@ services:
       - "3000:3000"
     environment:
       PORT: "3000"
-      ACTUAL_SERVER_URL: "http://actual-server:5006"
-      ACTUAL_PASSWORD: "replace-me"
-      # Optional alternatives:
+      ACTUAL_DATA_DIR: "/data"
+      # Required — set these for your Actual server:
+      ACTUAL_SERVER_URL: "https://your-actual-server.com"
+      ACTUAL_PASSWORD: "your-password"
+      # Optional:
       # ACTUAL_SESSION_TOKEN: ""
-      # ACTUAL_DATA_DIR: "/data"
       # ACTUAL_BUDGET_ID: ""
       # ACTUAL_BUDGET_NAME: ""
       # ACTUAL_SYNC_ID: ""
     volumes:
       - actual_importer_data:/data
     restart: unless-stopped
-    # Example: run CLI mode instead of web server
-    # command:
-    #   - npm
-    #   - run
-    #   - cli
-    #   - --
-    #   - /imports/transactions.csv
-    #   - --server-url
-    #   - http://actual-server:5006
-    #   - --password
-    #   - replace-me
-    #   - --budget-name
-    #   - Personal
-    # volumes:
-    #   - ./imports:/imports:ro
 
 volumes:
   actual_importer_data:
