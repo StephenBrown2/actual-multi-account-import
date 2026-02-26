@@ -443,8 +443,9 @@ app.use((err: unknown, _req: Request, res: Response, _next: () => void) => {
 });
 
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
-const server = app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+const host = process.env.HOST ?? "0.0.0.0";
+const server = app.listen(port, host, () => {
+  console.log(`Server running on http://${host}:${port}`);
 });
 
 process.on("SIGINT", async () => {
