@@ -2,6 +2,7 @@ import { internal } from "@actual-app/api";
 
 import type {
   AccountRef,
+  AmountOptions,
   FieldMapping,
   MapRowsResult,
   MappingRequest,
@@ -152,9 +153,61 @@ function buildFromStructuredRow(row: NormalizedRow): PreparedImportTransaction |
   };
 }
 
+function applyAmountOptions(
+  rawAmount: number | null,
+  rawInflow: number | null,
+  rawOutflow: number | null,
+  rawInOut: string | undefined,
+  opts: AmountOptions | undefined,
+): number | null {
+  const splitMode = opts?.splitMode ?? false;
+  const inOutMode = opts?.inOutMode ?? false;
+  const outValue = opts?.outValue ?? "";
+  const flipAmount = opts?.flipAmount ?? false;
+  const multiplier = Number.parseFloat(opts?.multiplierAmount ?? "") || 1;
+
+  let inflow = 0;
+  let outflow = 0;
+
+  if (splitMode && !inOutMode) {
+    outflow = rawOutflow != null ? -Math.abs(rawOutflow) : 0;
+    inflow = outflow ? 0 : (rawInflow != null ? Math.abs(rawInflow) : 0);
+  } else {
+    const amt = rawAmount ?? 0;
+    if (amt >= 0) inflow = amt;
+    else outflow = amt;
+  }
+
+  if (inOutMode) {
+    const transactionValue = outflow || inflow;
+    const inOutVal = String(rawInOut ?? "").trim().toLowerCase();
+    const outVal = outValue.trim().toLowerCase();
+    if (inOutVal === outVal) {
+      outflow = -Math.abs(transactionValue);
+      inflow = 0;
+    } else {
+      inflow = Math.abs(transactionValue);
+      outflow = 0;
+    }
+  }
+
+  if (flipAmount) {
+    const oldInflow = inflow;
+    inflow = Math.abs(outflow);
+    outflow = -Math.abs(oldInflow);
+  }
+
+  inflow = Math.round(inflow * multiplier);
+  outflow = Math.round(outflow * multiplier);
+
+  const amount = outflow || inflow;
+  return amount !== 0 ? amount : null;
+}
+
 function buildFromMappedRow(
   row: NormalizedRow,
   mapping: FieldMapping,
+  amountOptions?: AmountOptions,
 ): PreparedImportTransaction | null {
   const dateRaw = getMappedValue(row.raw, mapping.date);
   const date = dateRaw ? normalizeDate(dateRaw) : null;
@@ -162,13 +215,32 @@ function buildFromMappedRow(
     return null;
   }
 
+  const rawAmount = mapping.amount
+    ? parseMoney(getMappedValue(row.raw, mapping.amount))
+    : null;
+  const rawInflow = mapping.inflow
+    ? parseMoney(getMappedValue(row.raw, mapping.inflow))
+    : null;
+  const rawOutflow = mapping.outflow
+    ? parseMoney(getMappedValue(row.raw, mapping.outflow))
+    : null;
+  const rawInOut = getMappedValue(row.raw, mapping.inOut);
+
   let amount: number | null = null;
-  if (mapping.amount) {
-    amount = parseMoney(getMappedValue(row.raw, mapping.amount));
-  } else if (mapping.inflow || mapping.outflow) {
-    const inflow = parseMoney(getMappedValue(row.raw, mapping.inflow)) ?? 0;
-    const outflow = parseMoney(getMappedValue(row.raw, mapping.outflow)) ?? 0;
-    amount = inflow - outflow;
+  if (mapping.inflow || mapping.outflow) {
+    amount = applyAmountOptions(
+      (rawInflow ?? 0) - (rawOutflow ?? 0),
+      rawInflow,
+      rawOutflow,
+      rawInOut,
+      amountOptions,
+    );
+    if (amount === null && (rawInflow !== null || rawOutflow !== null)) {
+      amount = (rawInflow ?? 0) - (rawOutflow ?? 0);
+    }
+  } else if (rawAmount !== null) {
+    amount = applyAmountOptions(rawAmount, null, null, rawInOut, amountOptions);
+    if (amount === null) amount = rawAmount;
   }
 
   if (amount === null) {
@@ -210,7 +282,7 @@ export function mapRowsForImport(
   for (const row of rows) {
     const mappedTxn = row.structured
       ? buildFromStructuredRow(row)
-      : buildFromMappedRow(row, request.fieldMapping);
+      : buildFromMappedRow(row, request.fieldMapping, request.amountOptions);
     if (!mappedTxn) {
       rowErrors.push({
         rowNumber: row.rowNumber,

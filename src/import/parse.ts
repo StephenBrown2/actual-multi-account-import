@@ -52,6 +52,7 @@ const COLUMN_CANDIDATES: Record<keyof FieldMapping, string[]> = {
   amount: ["amount", "amt", "value"],
   inflow: ["inflow", "credit", "money in", "deposit"],
   outflow: ["outflow", "debit", "money out", "withdrawal", "payment"],
+  inOut: ["type", "in/out", "in out", "debit/credit", "direction"],
   payeeName: ["payee", "name", "merchant", "description"],
   importedPayee: ["original payee", "bank description", "imported payee"],
   notes: ["notes", "memo", "description", "note"],

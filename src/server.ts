@@ -52,6 +52,13 @@ type ImportBody = {
   mapping: FieldMapping;
   accountValueMap?: Record<string, string>;
   defaultAccountId?: string;
+  amountOptions?: {
+    splitMode?: boolean;
+    inOutMode?: boolean;
+    outValue?: string;
+    flipAmount?: boolean;
+    multiplierAmount?: string;
+  };
   dryRun?: boolean;
   allowPartial?: boolean;
 };
@@ -402,6 +409,7 @@ app.post(
         fieldMapping: body.mapping ?? {},
         accountValueMap: body.accountValueMap ?? {},
         defaultAccountId: body.defaultAccountId,
+        amountOptions: body.amountOptions,
       };
       const mapped = mapRowsForImport(session.rows, accounts, mappingRequest);
       if (mapped.rowErrors.length > 0 && !body.allowPartial) {

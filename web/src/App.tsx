@@ -38,6 +38,57 @@ type PreviewResponse = {
 
 const SUPPORTED_EXTENSIONS = [".csv", ".tsv", ".qif", ".ofx", ".qfx", ".xml"];
 
+const PREFERENCES_STORAGE_KEY = "actual-multi-account-import:preferences";
+
+type SavedPreferences = Partial<{
+  mapping: FormState["mapping"];
+  defaultAccountId: string;
+  accountValueMap: Record<string, string>;
+  hasHeaderRow: boolean;
+  delimiter: string;
+  skipStartLines: number;
+  skipEndLines: number;
+  splitMode: boolean;
+  inOutMode: boolean;
+  outValue: string;
+  flipAmount: boolean;
+  multiplierAmount: string;
+  parseDateFormat: FormState["parseDateFormat"];
+}>;
+
+function loadPreferences(budgetId: string): SavedPreferences | null {
+  try {
+    const raw = localStorage.getItem(`${PREFERENCES_STORAGE_KEY}:${budgetId}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as SavedPreferences;
+  } catch {
+    return null;
+  }
+}
+
+function savePreferences(budgetId: string, form: FormState): void {
+  try {
+    const prefs: SavedPreferences = {
+      mapping: form.mapping,
+      defaultAccountId: form.defaultAccountId,
+      accountValueMap: form.accountValueMap,
+      hasHeaderRow: form.hasHeaderRow,
+      delimiter: form.delimiter,
+      skipStartLines: form.skipStartLines,
+      skipEndLines: form.skipEndLines,
+      splitMode: form.splitMode,
+      inOutMode: form.inOutMode,
+      outValue: form.outValue,
+      flipAmount: form.flipAmount,
+      multiplierAmount: form.multiplierAmount,
+      parseDateFormat: form.parseDateFormat,
+    };
+    localStorage.setItem(`${PREFERENCES_STORAGE_KEY}:${budgetId}`, JSON.stringify(prefs));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 type ImportApiResponse = {
   imports?: Array<{ accountId: string; count: number; result: unknown }>;
   error?: string;
@@ -459,6 +510,7 @@ type ImportSectionProps = {
   selectedCount: number;
   onPatch: (patch: Partial<FormState>) => void;
   onImport: () => Promise<void>;
+  onSavePreferences?: () => void;
 };
 
 function ImportSection({
@@ -466,7 +518,10 @@ function ImportSection({
   selectedCount,
   onPatch,
   onImport,
+  onSavePreferences,
 }: ImportSectionProps): React.JSX.Element {
+  const [savedFeedback, setSavedFeedback] = useState(false);
+
   return (
     <section className="card">
       <h2>3) Import</h2>
@@ -490,6 +545,19 @@ function ImportSection({
         <button onClick={() => void onImport()} disabled={selectedCount === 0}>
           Import {selectedCount} transactions
         </button>
+        {onSavePreferences && (
+          <button
+            type="button"
+            onClick={() => {
+              onSavePreferences();
+              setSavedFeedback(true);
+              setTimeout(() => setSavedFeedback(false), 2000);
+            }}
+            className="secondary"
+          >
+            {savedFeedback ? "Saved!" : "Save preferences"}
+          </button>
+        )}
       </div>
     </section>
   );
@@ -596,6 +664,15 @@ export function App(): React.JSX.Element {
     }
   }, [status?.budgetLoaded]);
 
+  React.useEffect(() => {
+    if (status?.currentBudgetId) {
+      const prefs = loadPreferences(status.currentBudgetId);
+      if (prefs && Object.keys(prefs).length > 0) {
+        dispatch({ type: "PATCH", patch: prefs });
+      }
+    }
+  }, [status?.currentBudgetId]);
+
   async function onPreview(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     setError(null);
@@ -640,10 +717,20 @@ export function App(): React.JSX.Element {
       }
       setPreview(data);
       setTransactions(toImportTransactions(data));
-      dispatch({
-        type: "RESET_FOR_PREVIEW",
-        mapping: inferInitialMappings(data),
-      });
+      const inferred = inferInitialMappings(data);
+      const prefs = status?.currentBudgetId
+        ? loadPreferences(status.currentBudgetId)
+        : null;
+      const columns = new Set(data.columns ?? []);
+      const mergedMapping = { ...inferred };
+      if (prefs?.mapping) {
+        for (const [field, col] of Object.entries(prefs.mapping)) {
+          if (col && columns.has(col)) {
+            mergedMapping[field as keyof typeof mergedMapping] = col;
+          }
+        }
+      }
+      dispatch({ type: "RESET_FOR_PREVIEW", mapping: mergedMapping });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to preview file.";
       setError(
@@ -752,6 +839,7 @@ export function App(): React.JSX.Element {
             amount: form.mapping.amount,
             inflow: form.mapping.inflow,
             outflow: form.mapping.outflow,
+            inOut: form.mapping.inOut,
             payeeName: form.mapping.payee,
             notes: form.mapping.notes,
             importedId: form.mapping.importedId,
@@ -759,6 +847,13 @@ export function App(): React.JSX.Element {
           },
           accountValueMap: form.accountValueMap,
           defaultAccountId: form.defaultAccountId || undefined,
+          amountOptions: {
+            splitMode: form.splitMode,
+            inOutMode: form.inOutMode,
+            outValue: form.outValue,
+            flipAmount: form.flipAmount,
+            multiplierAmount: form.multiplierAmount,
+          },
           dryRun: form.dryRun,
           allowPartial: form.allowPartial,
         }),
@@ -778,6 +873,9 @@ export function App(): React.JSX.Element {
         return;
       }
       setResult(JSON.stringify(data, null, 2));
+      if (status?.currentBudgetId && !form.dryRun) {
+        savePreferences(status.currentBudgetId, form);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to import transactions.";
       setError(
@@ -970,6 +1068,11 @@ export function App(): React.JSX.Element {
                 selectedCount={selectedCount}
                 onPatch={(patch) => dispatch({ type: "PATCH", patch })}
                 onImport={onImport}
+                onSavePreferences={
+                  status?.currentBudgetId
+                    ? () => savePreferences(status.currentBudgetId!, form)
+                    : undefined
+                }
               />
             </>
           )}

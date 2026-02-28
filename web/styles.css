@@ -181,6 +181,15 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button.secondary {
+  background: var(--line);
+  color: var(--text);
+}
+
+button.secondary:hover {
+  background: var(--input-border);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

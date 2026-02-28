@@ -45,6 +45,7 @@ export type FieldMapping = {
   amount?: string;
   inflow?: string;
   outflow?: string;
+  inOut?: string;
   payeeName?: string;
   importedPayee?: string;
   notes?: string;
@@ -53,10 +54,19 @@ export type FieldMapping = {
   cleared?: string;
 };
 
+export type AmountOptions = {
+  splitMode?: boolean;
+  inOutMode?: boolean;
+  outValue?: string;
+  flipAmount?: boolean;
+  multiplierAmount?: string;
+};
+
 export type MappingRequest = {
   fieldMapping: FieldMapping;
   defaultAccountId?: string;
   accountValueMap?: Record<string, string>;
+  amountOptions?: AmountOptions;
 };
 
 export type PreparedImportTransaction = {

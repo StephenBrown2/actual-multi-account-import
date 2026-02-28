@@ -21,7 +21,35 @@ services:
       # ACTUAL_SYNC_ID: ""
     volumes:
       - actual_importer_data:/data
+      # For watch mode: mount a directory to auto-import when files appear:
+      # - ./imports:/imports:ro
     restart: unless-stopped
+    # Override command to run CLI instead of web server.
+    # Uncomment the imports volume above when using CLI/watch.
+    #
+    # One-off import:
+    # command: >
+    #   npm run cli -- /imports/transactions.csv
+    #   --server-url https://your-actual-server.com
+    #   --password your-password
+    #   --budget-name "Personal"
+    #   --default-account "Checking"
+    #   --map-field "date=Date"
+    #   --map-field "amount=Amount"
+    #   --map-field "payee=Description"
+    #   --in-out-mode --out-value "debit"
+    #
+    # Watch folder (auto-import when files appear):
+    # command: >
+    #   npm run cli -- watch /imports
+    #   --server-url https://your-actual-server.com
+    #   --password your-password
+    #   --budget-name "Personal"
+    #   --default-account "Checking"
+    #   --map-field "date=Date"
+    #   --map-field "amount=Amount"
+    #   --map-field "payee=Description"
+    #   --in-out-mode --out-value "debit"
 
 volumes:
   actual_importer_data:

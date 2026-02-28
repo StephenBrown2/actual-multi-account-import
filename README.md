@@ -1,9 +1,10 @@
 # Actual Multi-Account Import
 
-Standalone importer for Actual Budget using `@actual-app/api` with two operating modes:
+Standalone importer for Actual Budget using `@actual-app/api` with three operating modes:
 
+- **Web mode**: upload, preview, map fields, and import with account-column mapping (saved preferences per budget)
 - **CLI mode**: import one file from the terminal
-- **Web mode**: upload, preview, map fields, and import with account-column mapping
+- **Watch mode**: auto-import files when they appear in a directory
 
 Supported input extensions (through Actual's parser): `.csv`, `.tsv`, `.qif`, `.ofx`, `.qfx`, `.xml`.
 
@@ -77,6 +78,8 @@ Web flow:
 4. Map account column values to Actual account IDs
 5. Import (or dry run)
 
+**Saved preferences**: Field mappings, account mappings, and amount options (in/out mode, split mode, etc.) are saved per budget in your browser. Use "Save preferences" to persist your current settings, or they auto-save after a successful import. When you preview a new file with the same column names, your saved preferences are applied automatically.
+
 ## CLI Mode
 
 Basic:
@@ -101,7 +104,8 @@ just cli ./transactions.csv \
   --map-account "Joint Checking=acct_joint_id" \
   --map-field "date=Date" \
   --map-field "amount=Amount" \
-  --map-field "payee=Description"
+  --map-field "payee=Description" \
+  --map-field "inOut=Type"
 ```
 
 Important options:
@@ -110,6 +114,29 @@ Important options:
 - `--allow-partial`: import valid rows even if some rows fail
 - `--session-token`: use token auth instead of password
 - `--budget-id` / `--budget-name` / `--sync-id`: select budget
+- `--in-out-mode` + `--out-value <string>`: when your CSV has a single amount column plus an in/out indicator (e.g. "debit"/"credit"), use this to correctly classify transactions
+- `--split-mode`: use separate inflow and outflow columns instead of a single amount column
+- `--flip-amount`: negate all amounts (swap inflow↔outflow)
+- `--multiplier-amount <n>`: multiply amounts by a factor (e.g. 0.01 for cents-to-dollars)
+
+### Watch folder (auto-import)
+
+Watch a directory and automatically import files when they appear:
+
+```bash
+just cli watch ./imports \
+  --server-url http://localhost:5006 \
+  --password your-password \
+  --budget-name "Personal" \
+  --default-account "Checking" \
+  --map-field "date=Date" \
+  --map-field "amount=Amount" \
+  --map-field "payee=Description" \
+  --in-out-mode \
+  --out-value "debit"
+```
+
+Use the same mapping options as the regular import. Press Ctrl+C to stop.
 
 ## Docker
 
@@ -162,7 +189,41 @@ just docker-run
 
 3. Open `http://localhost:3000`. Stop with `docker compose down` or `just compose-down`.
 
-The example Compose file uses a named volume for `ACTUAL_DATA_DIR` and exposes port 3000. To run the CLI inside the container instead of the web server, see the commented `command` and `volumes` in `docker-compose.example.yml`.
+The example Compose file uses a named volume for `ACTUAL_DATA_DIR` and exposes port 3000.
+
+**CLI / Watch mode in Docker**: Override the command (either in the docker-compose.yml or with the run command) and mount your import directory. If `ACTUAL_SERVER_URL`, `ACTUAL_PASSWORD`, and `ACTUAL_BUDGET_NAME` are set in your `docker-compose.yml`, you can omit those flags from the command.
+
+One-off import:
+
+```bash
+docker compose run --rm -v ./imports:/imports actual-multi-account-import \
+  npm run cli -- /imports/transactions.csv \
+  --server-url https://your-actual-server.com \
+  --password your-password \
+  --budget-name "Personal" \
+  --default-account "Checking" \
+  --map-field "date=Date" \
+  --map-field "amount=Amount" \
+  --map-field "payee=Description" \
+  --in-out-mode --out-value "debit"
+```
+
+Watch folder (runs until Ctrl+C):
+
+```bash
+docker compose run --rm -v ./imports:/imports actual-multi-account-import \
+  npm run cli -- watch /imports \
+  --server-url https://your-actual-server.com \
+  --password your-password \
+  --budget-name "Personal" \
+  --default-account "Checking" \
+  --map-field "date=Date" \
+  --map-field "amount=Amount" \
+  --map-field "payee=Description" \
+  --in-out-mode --out-value "debit"
+```
+
+Create an `imports` directory and drop CSV files into it for the watch command.
 
 ## GHCR Publishing
 
