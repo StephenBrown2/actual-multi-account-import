@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, watch } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import dotenv from "dotenv";
 dotenv.config();
@@ -10,17 +11,12 @@ import { formatForUser } from "./errors";
 import { resolveAccountByNameOrId } from "./import/accounts";
 import { mapRowsForImport } from "./import/mapping";
 import { buildPreviewPayload, parseAndNormalizeFile } from "./import/parse";
-import type {
-  AmountOptions,
-  FieldMapping,
-  MappingRequest,
-  ParseFileOptions,
-} from "./types";
+import type { AmountOptions, FieldMapping, MappingRequest, ParseFileOptions } from "./types";
 
 const WATCH_EXTENSIONS = new Set([".csv", ".tsv", ".qif", ".ofx", ".qfx", ".xml"]);
 
-type CliOptions = {
-  serverUrl: string;
+export type CliOptions = {
+  serverUrl?: string;
   password?: string;
   sessionToken?: string;
   dataDir?: string;
@@ -47,7 +43,52 @@ type CliOptions = {
   multiplierAmount?: string;
 };
 
-function parseKeyValue(items: string[] | undefined): Record<string, string> {
+type CliDependencies = {
+  runImport: typeof runImport;
+  closeActual: typeof closeActual;
+  existsSync: typeof existsSync;
+  watch: typeof watch;
+  formatForUser: typeof formatForUser;
+  log: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+  waitUntilStopped: () => Promise<void>;
+};
+
+const defaultCliDependencies: CliDependencies = {
+  runImport,
+  closeActual,
+  existsSync,
+  watch,
+  formatForUser,
+  log: (...args) => console.log(...args),
+  error: (...args) => console.error(...args),
+  waitUntilStopped: () => new Promise<void>(() => {}),
+};
+
+export function withEnvFallback(options: CliOptions): CliOptions {
+  return {
+    ...options,
+    serverUrl: options.serverUrl ?? process.env.ACTUAL_SERVER_URL,
+    password: options.password ?? process.env.ACTUAL_PASSWORD,
+    sessionToken: options.sessionToken ?? process.env.ACTUAL_SESSION_TOKEN,
+    dataDir: options.dataDir ?? process.env.ACTUAL_DATA_DIR,
+    budgetId: options.budgetId ?? process.env.ACTUAL_BUDGET_ID,
+    budgetName: options.budgetName ?? process.env.ACTUAL_BUDGET_NAME,
+    syncId: options.syncId ?? process.env.ACTUAL_SYNC_ID,
+  };
+}
+
+export function assertRequiredOptions(
+  options: CliOptions,
+): asserts options is CliOptions & { serverUrl: string } {
+  if (!options.serverUrl) {
+    throw new Error(
+      "Actual server URL required. Provide --server-url <url> or set ACTUAL_SERVER_URL in the environment.",
+    );
+  }
+}
+
+export function parseKeyValue(items: string[] | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const item of items ?? []) {
     const idx = item.indexOf("=");
@@ -63,7 +104,10 @@ function parseKeyValue(items: string[] | undefined): Record<string, string> {
   return out;
 }
 
-function parseFieldMapping(raw: Record<string, string>, accountColumn?: string): FieldMapping {
+export function parseFieldMapping(
+  raw: Record<string, string>,
+  accountColumn?: string,
+): FieldMapping {
   const result: FieldMapping = {
     date: raw.date,
     amount: raw.amount,
@@ -80,7 +124,7 @@ function parseFieldMapping(raw: Record<string, string>, accountColumn?: string):
   return result;
 }
 
-function parseAmountOptions(options: CliOptions): AmountOptions | undefined {
+export function parseAmountOptions(options: CliOptions): AmountOptions | undefined {
   const hasAny =
     options.inOutMode ||
     options.splitMode ||
@@ -107,7 +151,7 @@ function intOption(value?: string): number | undefined {
   return parsed;
 }
 
-function parseFileOptions(options: CliOptions): ParseFileOptions {
+export function parseFileOptions(options: CliOptions): ParseFileOptions {
   return {
     hasHeaderRow: options.hasHeader,
     delimiter: options.delimiter,
@@ -120,7 +164,7 @@ function parseFileOptions(options: CliOptions): ParseFileOptions {
 
 async function runImport(
   file: string,
-  options: CliOptions,
+  options: CliOptions & { serverUrl: string },
 ): Promise<{ accounts: Awaited<ReturnType<typeof listAccounts>> } | null> {
   if (!existsSync(file)) {
     throw new Error(`File not found: "${file}"`);
@@ -245,113 +289,115 @@ async function runImport(
   return { accounts };
 }
 
-const program = new Command();
-program
-  .name("actual-multi-account-import")
-  .description("Import one file into Actual with optional per-row account mapping")
-  .argument("<file>", "Path to import file (csv/tsv/qif/ofx/qfx/xml)")
-  .requiredOption("--server-url <url>", "Actual server URL")
-  .option("--password <password>", "Actual server password")
-  .option("--session-token <token>", "Actual API session token")
-  .option("--data-dir <path>", "Directory to store local Actual state")
-  .option("--budget-id <id>", "Budget ID to load")
-  .option("--budget-name <name>", "Budget name to load")
-  .option("--sync-id <id>", "Sync ID (downloads budget if needed)")
-  .option("--default-account <name-or-id>", "Fallback account when account column is absent")
-  .option("--account-column <column>", "Column containing account names/ids")
-  .option(
-    "--map-account <from=to>",
-    "Map account column value to Actual account id/name",
-    collect,
-    [],
-  )
-  .option(
-    "--map-field <field=column>",
-    "Map fields for delimited files (date,amount,inflow,outflow,inOut,payee,notes,importedId,account,cleared)",
-    collect,
-    [],
-  )
-  .option("--has-header", "Delimited file has a header row", true)
-  .option("--no-has-header", "Delimited file has no header row")
-  .option("--delimiter <char>", "CSV/TSV delimiter override")
-  .option("--skip-start-lines <n>", "Skip first N lines")
-  .option("--skip-end-lines <n>", "Skip last N lines")
-  .option("--import-notes", "Import note/memo values where supported", true)
-  .option("--no-import-notes", "Do not import note/memo values")
-  .option("--fallback-missing-payee-to-memo", "OFX/QFX: use memo when payee is missing", false)
-  .option("--dry-run", "Preview import only; do not write transactions", false)
-  .option("--allow-partial", "Import valid rows even if some rows fail validation", false)
-  .option("--json", "Emit machine-readable JSON output", false)
-  .option("--in-out-mode", "Use in/out column to determine inflow vs outflow")
-  .option("--out-value <string>", "Value in in/out column that means outflow (e.g. debit)")
-  .option("--split-mode", "Use separate inflow and outflow columns")
-  .option("--flip-amount", "Negate amounts (inflow↔outflow)")
-  .option("--multiplier-amount <n>", "Multiply amounts by this factor", "1")
-  .action(async (file: string, options: CliOptions) => {
-    try {
-      await runImport(file, options);
-    } catch (err) {
-      throw err;
-    }
-  });
+export function buildProgram(deps: CliDependencies = defaultCliDependencies): Command {
+  const program = new Command();
 
-program
-  .command("watch <directory>")
-  .description("Watch a directory and auto-import CSV/TSV/QIF/OFX/QFX/XML files when they appear")
-  .requiredOption("--server-url <url>", "Actual server URL")
-  .option("--password <password>", "Actual server password")
-  .option("--session-token <token>", "Actual API session token")
-  .option("--data-dir <path>", "Directory to store local Actual state")
-  .option("--budget-id <id>", "Budget ID to load")
-  .option("--budget-name <name>", "Budget name to load")
-  .option("--sync-id <id>", "Sync ID (download budget if needed)")
-  .option("--default-account <name-or-id>", "Fallback account when account column is absent")
-  .option("--account-column <column>", "Column containing account names/ids")
-  .option(
-    "--map-account <from=to>",
-    "Map account column value to Actual account id/name",
-    collect,
-    [],
-  )
-  .option(
-    "--map-field <field=column>",
-    "Map fields for delimited files (date,amount,inflow,outflow,inOut,payee,notes,importedId,account,cleared)",
-    collect,
-    [],
-  )
-  .option("--has-header", "Delimited file has a header row", true)
-  .option("--no-has-header", "Delimited file has no header row")
-  .option("--delimiter <char>", "CSV/TSV delimiter override")
-  .option("--skip-start-lines <n>", "Skip first N lines")
-  .option("--skip-end-lines <n>", "Skip last N lines")
-  .option("--import-notes", "Import note/memo values where supported", true)
-  .option("--no-import-notes", "Do not import note/memo values")
-  .option("--fallback-missing-payee-to-memo", "OFX/QFX: use memo when payee is missing", false)
-  .option("--dry-run", "Preview import only; do not write transactions", false)
-  .option("--allow-partial", "Import valid rows even if some rows fail validation", false)
-  .option("--json", "Emit machine-readable JSON output", false)
-  .option("--in-out-mode", "Use in/out column to determine inflow vs outflow")
-  .option("--out-value <string>", "Value in in/out column that means outflow (e.g. debit)")
-  .option("--split-mode", "Use separate inflow and outflow columns")
-  .option("--flip-amount", "Negate amounts (inflow↔outflow)")
-  .option("--multiplier-amount <n>", "Multiply amounts by this factor", "1")
-  .action(async (directory: string, options: CliOptions) => {
-    if (!existsSync(directory)) {
-      throw new Error(
-        `Directory not found: "${directory}".\n\nUse an absolute path if the directory is elsewhere.`,
-      );
-    }
+  program
+    .name("actual-multi-account-import")
+    .description("Import one file into Actual with optional per-row account mapping")
+    .argument("<file>", "Path to import file (csv/tsv/qif/ofx/qfx/xml)")
+    .option("--server-url <url>", "Actual server URL")
+    .option("--password <password>", "Actual server password")
+    .option("--session-token <token>", "Actual API session token")
+    .option("--data-dir <path>", "Directory to store local Actual state")
+    .option("--budget-id <id>", "Budget ID to load")
+    .option("--budget-name <name>", "Budget name to load")
+    .option("--sync-id <id>", "Sync ID (downloads budget if needed)")
+    .option("--default-account <name-or-id>", "Fallback account when account column is absent")
+    .option("--account-column <column>", "Column containing account names/ids")
+    .option(
+      "--map-account <from=to>",
+      "Map account column value to Actual account id/name",
+      collect,
+      [],
+    )
+    .option(
+      "--map-field <field=column>",
+      "Map fields for delimited files (date,amount,inflow,outflow,inOut,payee,notes,importedId,account,cleared)",
+      collect,
+      [],
+    )
+    .option("--has-header", "Delimited file has a header row", true)
+    .option("--no-has-header", "Delimited file has no header row")
+    .option("--delimiter <char>", "CSV/TSV delimiter override")
+    .option("--skip-start-lines <n>", "Skip first N lines")
+    .option("--skip-end-lines <n>", "Skip last N lines")
+    .option("--import-notes", "Import note/memo values where supported", true)
+    .option("--no-import-notes", "Do not import note/memo values")
+    .option("--fallback-missing-payee-to-memo", "OFX/QFX: use memo when payee is missing", false)
+    .option("--dry-run", "Preview import only; do not write transactions", false)
+    .option("--allow-partial", "Import valid rows even if some rows fail validation", false)
+    .option("--json", "Emit machine-readable JSON output", false)
+    .option("--in-out-mode", "Use in/out column to determine inflow vs outflow")
+    .option("--out-value <string>", "Value in in/out column that means outflow (e.g. debit)")
+    .option("--split-mode", "Use separate inflow and outflow columns")
+    .option("--flip-amount", "Negate amounts (inflow↔outflow)")
+    .option("--multiplier-amount <n>", "Multiply amounts by this factor", "1")
+    .action(async (file: string, rawOptions: CliOptions) => {
+      const options = withEnvFallback(rawOptions);
+      assertRequiredOptions(options);
+      await deps.runImport(file, options);
+    });
 
-    console.log(`Watching ${directory} for new import files...`);
-    console.log("Supported extensions:", [...WATCH_EXTENSIONS].join(", "));
-    console.log("Press Ctrl+C to stop.\n");
+  program
+    .command("watch <directory>")
+    .description("Watch a directory and auto-import CSV/TSV/QIF/OFX/QFX/XML files when they appear")
+    .option("--server-url <url>", "Actual server URL")
+    .option("--password <password>", "Actual server password")
+    .option("--session-token <token>", "Actual API session token")
+    .option("--data-dir <path>", "Directory to store local Actual state")
+    .option("--budget-id <id>", "Budget ID to load")
+    .option("--budget-name <name>", "Budget name to load")
+    .option("--sync-id <id>", "Sync ID (download budget if needed)")
+    .option("--default-account <name-or-id>", "Fallback account when account column is absent")
+    .option("--account-column <column>", "Column containing account names/ids")
+    .option(
+      "--map-account <from=to>",
+      "Map account column value to Actual account id/name",
+      collect,
+      [],
+    )
+    .option(
+      "--map-field <field=column>",
+      "Map fields for delimited files (date,amount,inflow,outflow,inOut,payee,notes,importedId,account,cleared)",
+      collect,
+      [],
+    )
+    .option("--has-header", "Delimited file has a header row", true)
+    .option("--no-has-header", "Delimited file has no header row")
+    .option("--delimiter <char>", "CSV/TSV delimiter override")
+    .option("--skip-start-lines <n>", "Skip first N lines")
+    .option("--skip-end-lines <n>", "Skip last N lines")
+    .option("--import-notes", "Import note/memo values where supported", true)
+    .option("--no-import-notes", "Do not import note/memo values")
+    .option("--fallback-missing-payee-to-memo", "OFX/QFX: use memo when payee is missing", false)
+    .option("--dry-run", "Preview import only; do not write transactions", false)
+    .option("--allow-partial", "Import valid rows even if some rows fail validation", false)
+    .option("--json", "Emit machine-readable JSON output", false)
+    .option("--in-out-mode", "Use in/out column to determine inflow vs outflow")
+    .option("--out-value <string>", "Value in in/out column that means outflow (e.g. debit)")
+    .option("--split-mode", "Use separate inflow and outflow columns")
+    .option("--flip-amount", "Negate amounts (inflow↔outflow)")
+    .option("--multiplier-amount <n>", "Multiply amounts by this factor", "1")
+    .action(async (directory: string, rawOptions: CliOptions, command: Command) => {
+      const scopedOptions =
+        typeof command.optsWithGlobals === "function" ? command.optsWithGlobals() : rawOptions;
+      const options = withEnvFallback(scopedOptions as CliOptions);
+      assertRequiredOptions(options);
 
-    const processing = new Set<string>();
+      if (!deps.existsSync(directory)) {
+        throw new Error(
+          `Directory not found: "${directory}".\n\nUse an absolute path if the directory is elsewhere.`,
+        );
+      }
 
-    watch(
-      directory,
-      { recursive: false },
-      async (eventType, filename) => {
+      deps.log(`Watching ${directory} for new import files...`);
+      deps.log("Supported extensions:", [...WATCH_EXTENSIONS].join(", "));
+      deps.log("Press Ctrl+C to stop.\n");
+
+      const processing = new Set<string>();
+
+      deps.watch(directory, { recursive: false }, async (eventType, filename) => {
         if (!filename || eventType !== "rename") return;
 
         const ext = extname(filename).toLowerCase();
@@ -361,41 +407,50 @@ program
         if (processing.has(filePath)) return;
 
         try {
-          if (!existsSync(filePath)) return;
+          if (!deps.existsSync(filePath)) return;
         } catch {
           return;
         }
 
         processing.add(filePath);
-        console.log(`\n[${new Date().toISOString()}] Importing: ${filename}`);
+        deps.log(`\n[${new Date().toISOString()}] Importing: ${filename}`);
 
         try {
-          await runImport(filePath, options);
+          await deps.runImport(filePath, options);
         } catch (err) {
-          console.error(`Import failed for ${filename}:`, formatForUser(err));
+          deps.error(`Import failed for ${filename}:`, deps.formatForUser(err));
         } finally {
           processing.delete(filePath);
         }
-      },
-    );
+      });
 
-    await new Promise<never>(() => {});
-  });
+      await deps.waitUntilStopped();
+    });
 
-function collect(value: string, previous: string[]) {
+  return program;
+}
+
+export function collect(value: string, previous: string[]) {
   previous.push(value);
   return previous;
 }
 
-async function main() {
+export async function main(
+  argv: string[] = process.argv,
+  deps: CliDependencies = defaultCliDependencies,
+) {
+  const program = buildProgram(deps);
+
   try {
-    await program.parseAsync(process.argv);
+    await program.parseAsync(argv);
   } catch (error) {
-    console.error(formatForUser(error));
+    deps.error(deps.formatForUser(error));
     process.exitCode = 1;
   } finally {
-    await closeActual();
+    await deps.closeActual();
   }
 }
 
-void main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  void main();
+}

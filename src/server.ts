@@ -261,7 +261,7 @@ app.post(
     const password =
       typeof body.password === "string"
         ? body.password
-        : lastConnectPassword ?? process.env.ACTUAL_PASSWORD;
+        : (lastConnectPassword ?? process.env.ACTUAL_PASSWORD);
     if (!budgetId && !syncId) {
       sendError(
         res,

@@ -171,7 +171,7 @@ function applyAmountOptions(
 
   if (splitMode && !inOutMode) {
     outflow = rawOutflow != null ? -Math.abs(rawOutflow) : 0;
-    inflow = outflow ? 0 : (rawInflow != null ? Math.abs(rawInflow) : 0);
+    inflow = outflow ? 0 : rawInflow != null ? Math.abs(rawInflow) : 0;
   } else {
     const amt = rawAmount ?? 0;
     if (amt >= 0) inflow = amt;
@@ -180,7 +180,9 @@ function applyAmountOptions(
 
   if (inOutMode) {
     const transactionValue = outflow || inflow;
-    const inOutVal = String(rawInOut ?? "").trim().toLowerCase();
+    const inOutVal = String(rawInOut ?? "")
+      .trim()
+      .toLowerCase();
     const outVal = outValue.trim().toLowerCase();
     if (inOutVal === outVal) {
       outflow = -Math.abs(transactionValue);
@@ -215,15 +217,9 @@ function buildFromMappedRow(
     return null;
   }
 
-  const rawAmount = mapping.amount
-    ? parseMoney(getMappedValue(row.raw, mapping.amount))
-    : null;
-  const rawInflow = mapping.inflow
-    ? parseMoney(getMappedValue(row.raw, mapping.inflow))
-    : null;
-  const rawOutflow = mapping.outflow
-    ? parseMoney(getMappedValue(row.raw, mapping.outflow))
-    : null;
+  const rawAmount = mapping.amount ? parseMoney(getMappedValue(row.raw, mapping.amount)) : null;
+  const rawInflow = mapping.inflow ? parseMoney(getMappedValue(row.raw, mapping.inflow)) : null;
+  const rawOutflow = mapping.outflow ? parseMoney(getMappedValue(row.raw, mapping.outflow)) : null;
   const rawInOut = getMappedValue(row.raw, mapping.inOut);
 
   let amount: number | null = null;

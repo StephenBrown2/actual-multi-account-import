@@ -718,9 +718,7 @@ export function App(): React.JSX.Element {
       setPreview(data);
       setTransactions(toImportTransactions(data));
       const inferred = inferInitialMappings(data);
-      const prefs = status?.currentBudgetId
-        ? loadPreferences(status.currentBudgetId)
-        : null;
+      const prefs = status?.currentBudgetId ? loadPreferences(status.currentBudgetId) : null;
       const columns = new Set(data.columns ?? []);
       const mergedMapping = { ...inferred };
       if (prefs?.mapping) {
@@ -790,9 +788,7 @@ export function App(): React.JSX.Element {
     setSelectBudgetLoading(true);
     try {
       const isSync = value.startsWith("sync:");
-      const body = isSync
-        ? { syncId: value.slice(5) }
-        : { budgetId: value };
+      const body = isSync ? { syncId: value.slice(5) } : { budgetId: value };
       const { ok, data } = await fetchJson<{ ok?: boolean }>("/api/select-budget", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -973,13 +969,13 @@ export function App(): React.JSX.Element {
               </label>
               {selectBudgetLoading && <p>Loading budget…</p>}
               {status.budgets.some((b) => !b.id && b.syncId) && (
-                <p className="muted">
-                  Server-only budgets will be downloaded when selected.
-                </p>
+                <p className="muted">Server-only budgets will be downloaded when selected.</p>
               )}
             </div>
           ) : (
-            <p>No budgets found. Create a budget in Actual, or check the server URL and password.</p>
+            <p>
+              No budgets found. Create a budget in Actual, or check the server URL and password.
+            </p>
           )}
         </section>
       ) : null}

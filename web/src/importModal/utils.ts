@@ -171,7 +171,9 @@ export function parseAmountFields(
 
   if (inOutMode) {
     const transactionValue = value.outflow || value.inflow;
-    const inOutVal = String(trans.inOut ?? "").trim().toLowerCase();
+    const inOutVal = String(trans.inOut ?? "")
+      .trim()
+      .toLowerCase();
     const outVal = outValue.trim().toLowerCase();
     if (inOutVal === outVal) {
       value.outflow = -Math.abs(transactionValue);

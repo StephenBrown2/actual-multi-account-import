@@ -91,20 +91,12 @@ function uniqueAccountValues(rows: NormalizedRow[], mapping: FieldMapping): stri
   return Array.from(values.values()).sort((a, b) => a.localeCompare(b));
 }
 
-export async function parseAndNormalizeFile(
-  filePath: string,
-  options: ParseFileOptions,
-): Promise<{ rows: NormalizedRow[]; errors: ParseError[]; format: PreviewPayload["format"] }> {
-  const format = detectFormatFromPath(filePath);
-  if (format === "unknown") {
-    throw new Error(
-      "Unsupported file format. Use a file with extension .csv, .tsv, .qif, .ofx, .qfx, or .xml.",
-    );
-  }
-  const parsed = await parseFileWithActual(filePath, options);
+export function normalizeParsedTransactions(
+  transactions: Array<ParsedDelimitedTransaction | ParsedStructuredTransaction> | undefined,
+): NormalizedRow[] {
   const rows: NormalizedRow[] = [];
 
-  for (const [index, txn] of (parsed.transactions ?? []).entries()) {
+  for (const [index, txn] of (transactions ?? []).entries()) {
     if (isStructuredRow(txn)) {
       rows.push({
         rowNumber: index + 1,
@@ -120,6 +112,22 @@ export async function parseAndNormalizeFile(
       structured: null,
     });
   }
+
+  return rows;
+}
+
+export async function parseAndNormalizeFile(
+  filePath: string,
+  options: ParseFileOptions,
+): Promise<{ rows: NormalizedRow[]; errors: ParseError[]; format: PreviewPayload["format"] }> {
+  const format = detectFormatFromPath(filePath);
+  if (format === "unknown") {
+    throw new Error(
+      "Unsupported file format. Use a file with extension .csv, .tsv, .qif, .ofx, .qfx, or .xml.",
+    );
+  }
+  const parsed = await parseFileWithActual(filePath, options);
+  const rows = normalizeParsedTransactions(parsed.transactions);
 
   return { rows, errors: parsed.errors ?? [], format };
 }

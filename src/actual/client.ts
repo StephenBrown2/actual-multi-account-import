@@ -161,9 +161,11 @@ export async function selectBudget(budgetId: string): Promise<void> {
  * Select a budget by local id or by sync id (downloads from cloud if needed).
  * When syncId is provided, password is used for downloadBudget.
  */
-export async function selectBudgetByIdOrSyncId(
-  opts: { budgetId?: string; syncId?: string; password?: string },
-): Promise<void> {
+export async function selectBudgetByIdOrSyncId(opts: {
+  budgetId?: string;
+  syncId?: string;
+  password?: string;
+}): Promise<void> {
   if (!initialized) {
     throw new Error("Not connected to Actual. Connect first.");
   }
@@ -180,8 +182,9 @@ export async function selectBudgetByIdOrSyncId(
   await downloadBudget(syncId, password ? { password } : undefined);
   const budgets = await getBudgets();
   const budget = budgets.find(
-    (b) => (b as { id?: string; groupId?: string; cloudFileId?: string }).groupId === syncId
-      || (b as { cloudFileId?: string }).cloudFileId === syncId,
+    (b) =>
+      (b as { id?: string; groupId?: string; cloudFileId?: string }).groupId === syncId ||
+      (b as { cloudFileId?: string }).cloudFileId === syncId,
   );
   const id = budget && (budget as { id?: string }).id;
   if (!id) {

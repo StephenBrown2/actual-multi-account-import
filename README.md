@@ -227,12 +227,17 @@ Create an `imports` directory and drop CSV files into it for the watch command.
 
 ## GHCR Publishing
 
-On pushes to `main`, GitHub Actions builds and pushes:
+GitHub Actions runs `bun test`, `bun lint`, and `bun format:check` in the `CI` workflow. The GHCR publish workflow only runs after that workflow completes successfully on `main`.
+
+After successful CI on `main`, GitHub Actions builds and pushes:
 
 - `ghcr.io/<owner>/<repo>:latest`
 - `ghcr.io/<owner>/<repo>:<commit-sha>` (full Git SHA)
 
-Workflow file: `.github/workflows/publish-ghcr.yml`
+Workflow files:
+
+- `.github/workflows/ci.yml`
+- `.github/workflows/publish-ghcr.yml`
 
 ## Validation
 
