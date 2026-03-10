@@ -2,17 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { FSWatcher, WatchListener, WatchOptions } from "node:fs";
 import { join } from "node:path";
 
+import { buildProgram } from "../src/cli/program";
 import {
   assertRequiredOptions,
-  buildProgram,
-  collect,
   parseAmountOptions,
   parseFieldMapping,
   parseFileOptions,
   parseKeyValue,
   withEnvFallback,
-} from "../src/cli";
-import type { CliOptions } from "../src/cli";
+} from "../src/cli/options";
+import type { CliOptions } from "../src/cli/options";
 
 const ENV_KEYS = [
   "ACTUAL_SERVER_URL",
@@ -166,20 +165,16 @@ describe("cli helpers", () => {
       importNotes: false,
     });
   });
-
-  test("collect appends repeated option values", () => {
-    expect(collect("b", ["a"])).toEqual(["a", "b"]);
-  });
 });
 
 describe("buildProgram", () => {
-  test("uses env fallback for root import command", async () => {
+  test("uses env fallback for explicit import command", async () => {
     process.env.ACTUAL_SERVER_URL = "https://env.example";
     process.env.ACTUAL_PASSWORD = "env-password";
 
     const calls: Array<{ file: string; options: CliOptions & { serverUrl: string } }> = [];
     const program = buildProgram({
-      runImport: async (file, options) => {
+      executeImportCommand: async (file, options) => {
         calls.push({ file, options });
         return null;
       },
@@ -192,7 +187,7 @@ describe("buildProgram", () => {
       waitUntilStopped: async () => {},
     });
 
-    await program.parseAsync(["node", "cli", "/imports/file.csv"]);
+    await program.parseAsync(["node", "cli", "import", "/imports/file.csv"]);
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({
@@ -208,7 +203,7 @@ describe("buildProgram", () => {
     const calls: Array<{ file: string; options: CliOptions & { serverUrl: string } }> = [];
     const logs: string[] = [];
     const program = buildProgram({
-      runImport: async (file, options) => {
+      executeImportCommand: async (file, options) => {
         calls.push({ file, options });
         return null;
       },

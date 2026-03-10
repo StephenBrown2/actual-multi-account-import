@@ -85,7 +85,7 @@ Web flow:
 Basic:
 
 ```bash
-just cli ./transactions.csv \
+just cli import ./transactions.csv \
   --server-url http://localhost:5006 \
   --password your-password \
   --budget-name "Personal" \
@@ -95,7 +95,7 @@ just cli ./transactions.csv \
 Multi-account mapping from a CSV column:
 
 ```bash
-just cli ./transactions.csv \
+just cli import ./transactions.csv \
   --server-url http://localhost:5006 \
   --password your-password \
   --budget-name "Personal" \
@@ -197,7 +197,7 @@ One-off import:
 
 ```bash
 docker compose run --rm -v ./imports:/imports actual-multi-account-import \
-  npm run cli -- /imports/transactions.csv \
+  npm run cli -- import /imports/transactions.csv \
   --server-url https://your-actual-server.com \
   --password your-password \
   --budget-name "Personal" \

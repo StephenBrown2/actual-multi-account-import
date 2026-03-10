@@ -29,11 +29,11 @@ services:
     #
     # One-off import:
     # command: >
-    #   npm run cli -- /imports/transactions.csv
-    #   --server-url=https://your-actual-server.com
-    #   --password=your-password
-    #   --budget-name="Personal"
-    #   --default-account="Checking"
+    #   npm run cli -- import /imports/transactions.csv
+    #   --server-url https://your-actual-server.com
+    #   --password your-password
+    #   --budget-name "Personal"
+    #   --default-account "Checking"
     #   --map-field "date=Date"
     #   --map-field "amount=Amount"
     #   --map-field "payee=Description"
@@ -42,10 +42,10 @@ services:
     # Watch folder (auto-import when files appear):
     # command: >
     #   npm run cli -- watch /imports
-    #   --server-url=https://your-actual-server.com
-    #   --password=your-password
-    #   --budget-name="Personal"
-    #   --default-account="Checking"
+    #   --server-url https://your-actual-server.com
+    #   --password your-password
+    #   --budget-name "Personal"
+    #   --default-account "Checking"
     #   --map-field "date=Date"
     #   --map-field "amount=Amount"
     #   --map-field "payee=Description"
