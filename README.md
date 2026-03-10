@@ -41,6 +41,9 @@ Environment variable reference (same as `.env.example`):
 - `ACTUAL_BUDGET_NAME`: Optional budget name to load.
 - `ACTUAL_SYNC_ID`: Optional sync/group ID to auto-download/load budget.
 
+Budget selector rule: choose exactly one selector (`ACTUAL_BUDGET_ID` or `ACTUAL_BUDGET_NAME` or `ACTUAL_SYNC_ID`).
+Selector source rule: define selectors in exactly one place, either environment variables or CLI flags, not both.
+
 How to get values:
 
 - **Server URL/password**: from your Actual server setup or hosting config.
@@ -113,7 +116,7 @@ Important options:
 - `--dry-run`: preview import without persisting
 - `--allow-partial`: import valid rows even if some rows fail
 - `--session-token`: use token auth instead of password
-- `--budget-id` / `--budget-name` / `--sync-id`: select budget
+- `--budget-id` / `--budget-name` / `--sync-id`: select budget (use exactly one)
 - `--in-out-mode` + `--out-value <string>`: when your CSV has a single amount column plus an in/out indicator (e.g. "debit"/"credit"), use this to correctly classify transactions
 - `--split-mode`: use separate inflow and outflow columns instead of a single amount column
 - `--flip-amount`: negate all amounts (swap inflow↔outflow)
@@ -155,7 +158,7 @@ docker run --rm -p 3000:3000 \
   ghcr.io/owner/repo:latest
 ```
 
-Then open `http://localhost:3000`. Add `-e ACTUAL_BUDGET_NAME="Your Budget"` (or `ACTUAL_BUDGET_ID`) if you have multiple budgets.
+Then open `http://localhost:3000`. If you have multiple budgets, add exactly one selector: `-e ACTUAL_BUDGET_NAME="Your Budget"`, `-e ACTUAL_BUDGET_ID="..."`, or `-e ACTUAL_SYNC_ID="..."`.
 
 **Using a locally built image:**
 
@@ -191,7 +194,10 @@ just docker-run
 
 The example Compose file uses a named volume for `ACTUAL_DATA_DIR` and exposes port 3000.
 
-**CLI / Watch mode in Docker**: Override the command (either in the docker-compose.yml or with the run command) and mount your import directory. If `ACTUAL_SERVER_URL`, `ACTUAL_PASSWORD`, and `ACTUAL_BUDGET_NAME` are set in your `docker-compose.yml`, you can omit those flags from the command.
+**CLI / Watch mode in Docker**: Override the command (either in the docker-compose.yml or with the run command) and mount your import directory. If `ACTUAL_SERVER_URL`, `ACTUAL_PASSWORD`, and a budget selector (`ACTUAL_BUDGET_ID` or `ACTUAL_BUDGET_NAME` or `ACTUAL_SYNC_ID`) are set in your `docker-compose.yml`, you can omit those flags from the command.
+
+Budget selector rule: choose exactly one selector (`--budget-id` or `--budget-name` or `--sync-id`) when using CLI flags.
+Selector source rule: set selectors in environment OR in CLI flags, not both.
 
 One-off import:
 

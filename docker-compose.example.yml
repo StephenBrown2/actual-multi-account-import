@@ -16,6 +16,8 @@ services:
       ACTUAL_PASSWORD: "your-password"
       # Optional:
       # ACTUAL_SESSION_TOKEN: ""
+      # Use exactly one budget selector, and define it in one place only:
+      # either here in environment OR via CLI flags in command, not both.
       # ACTUAL_BUDGET_ID: ""
       # ACTUAL_BUDGET_NAME: ""
       # ACTUAL_SYNC_ID: ""
@@ -30,6 +32,8 @@ services:
     # One-off import:
     # command: >
     #   npm run cli -- import /imports/transactions.csv
+    #   # If you set ACTUAL_BUDGET_* / ACTUAL_SYNC_ID in environment,
+    #   # do not pass --budget-id/--budget-name/--sync-id flags here.
     #   --server-url https://your-actual-server.com
     #   --password your-password
     #   --budget-name "Personal"
@@ -42,6 +46,8 @@ services:
     # Watch folder (auto-import when files appear):
     # command: >
     #   npm run cli -- watch /imports
+    #   # If you set ACTUAL_BUDGET_* / ACTUAL_SYNC_ID in environment,
+    #   # do not pass --budget-id/--budget-name/--sync-id flags here.
     #   --server-url https://your-actual-server.com
     #   --password your-password
     #   --budget-name "Personal"

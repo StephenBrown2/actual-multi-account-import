@@ -3,6 +3,7 @@ import type { FSWatcher, WatchListener, WatchOptions } from "node:fs";
 import { join } from "node:path";
 
 import { buildProgram } from "../src/cli/program";
+import { budgetSelectionTestUtils } from "../src/actual/client";
 import {
   assertRequiredOptions,
   parseAmountOptions,
@@ -239,5 +240,43 @@ describe("buildProgram", () => {
       }),
     });
     expect(logs[0]).toContain("Watching /imports");
+  });
+});
+
+describe("budget selection helpers", () => {
+  test("syncId-only selection prefers a locally downloaded match", () => {
+    const selected = budgetSelectionTestUtils.findBudgetBySelector(
+      [
+        { id: null, name: "Household", groupId: "sync-1" },
+        { id: "budget-local", name: "Household", groupId: "sync-1" },
+      ],
+      { syncId: "sync-1" },
+    );
+
+    expect(selected).toEqual({
+      id: "budget-local",
+      name: "Household",
+      groupId: "sync-1",
+    });
+  });
+
+  test("syncId selection also matches cloudFileId", () => {
+    const selected = budgetSelectionTestUtils.findBudgetBySelector(
+      [{ id: "budget-local", name: "Travel", cloudFileId: "cloud-42" }],
+      { syncId: "cloud-42" },
+    );
+
+    expect(selected).toEqual({
+      id: "budget-local",
+      name: "Travel",
+      cloudFileId: "cloud-42",
+    });
+  });
+
+  test("budget selection retry is only attempted when selectors are present", () => {
+    expect(budgetSelectionTestUtils.hasBudgetSelection({})).toBeFalse();
+    expect(budgetSelectionTestUtils.hasBudgetSelection({ budgetId: "budget-1" })).toBeTrue();
+    expect(budgetSelectionTestUtils.hasBudgetSelection({ budgetName: "Personal" })).toBeTrue();
+    expect(budgetSelectionTestUtils.hasBudgetSelection({ syncId: "sync-1" })).toBeTrue();
   });
 });

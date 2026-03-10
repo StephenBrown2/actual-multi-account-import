@@ -26,6 +26,13 @@ function debug(...args: unknown[]) {
   }
 }
 
+type BudgetRecord = {
+  id?: string | null;
+  name: string;
+  groupId?: string;
+  cloudFileId?: string;
+};
+
 let initialized = false;
 let budgetLoaded = false;
 let currentBudgetId: string | null = null;
@@ -46,6 +53,51 @@ function assertConnection(opts: ConnectionOptions) {
   }
 }
 
+function budgetMatchesSyncId(budget: BudgetRecord, syncId: string): boolean {
+  return budget.groupId === syncId || budget.cloudFileId === syncId;
+}
+
+function findBudgetBySelector(
+  budgets: BudgetRecord[],
+  opts: Pick<ConnectionOptions, "budgetId" | "budgetName" | "syncId">,
+): BudgetRecord | null {
+  if (opts.budgetId) {
+    return budgets.find((budget) => budget.id === opts.budgetId) ?? null;
+  }
+
+  if (opts.budgetName) {
+    const matches = budgets.filter((budget) => budget.name === opts.budgetName);
+    if (matches.length === 0) {
+      return null;
+    }
+    return matches.find((budget) => Boolean(budget.id)) ?? matches[0] ?? null;
+  }
+
+  if (opts.syncId) {
+    const matches = budgets.filter((budget) => budgetMatchesSyncId(budget, opts.syncId!));
+    if (matches.length === 0) {
+      return null;
+    }
+    return matches.find((budget) => Boolean(budget.id)) ?? matches[0] ?? null;
+  }
+
+  if (budgets.length === 1) {
+    return budgets[0] ?? null;
+  }
+
+  return null;
+}
+
+function hasBudgetSelection(opts: Pick<ConnectionOptions, "budgetId" | "budgetName" | "syncId">) {
+  return Boolean(opts.budgetId || opts.budgetName || opts.syncId);
+}
+
+export const budgetSelectionTestUtils = {
+  budgetMatchesSyncId,
+  findBudgetBySelector,
+  hasBudgetSelection,
+};
+
 async function pickAndLoadBudget(opts: ConnectionOptions) {
   debug("pickAndLoadBudget: opts", {
     serverURL: opts.serverURL,
@@ -64,7 +116,7 @@ async function pickAndLoadBudget(opts: ConnectionOptions) {
   }));
 
   if (opts.syncId) {
-    const exists = budgets.some((b) => (b as { groupId?: string }).groupId === opts.syncId);
+    const exists = budgets.some((budget) => budgetMatchesSyncId(budget as BudgetRecord, opts.syncId!));
     debug("syncId provided; already downloaded?", exists);
     if (!exists) {
       debug("downloading budget for syncId", opts.syncId);
@@ -74,28 +126,11 @@ async function pickAndLoadBudget(opts: ConnectionOptions) {
     }
   }
 
-  const byName = (name: string) => {
-    const matches = budgets.filter((b) => b.name === name);
-    if (matches.length === 0) {
-      return null;
-    }
-    // Prefer a budget that is already downloaded locally.
-    return matches.find((b) => Boolean(b.id)) ?? matches[0] ?? null;
-  };
-
-  let selected = null as (typeof budgets)[number] | null;
-  if (opts.budgetId) {
-    selected = budgets.find((b) => b.id === opts.budgetId) ?? null;
-    debug("selection by budgetId", opts.budgetId, "=>", selected ? { id: (selected as { id?: string }).id, name: (selected as { name?: string }).name } : null);
-  } else if (opts.budgetName) {
-    selected = byName(opts.budgetName);
-    debug("selection by budgetName", opts.budgetName, "=>", selected ? { id: (selected as { id?: string }).id, name: (selected as { name?: string }).name } : null);
-  } else if (budgets.length === 1) {
-    selected = budgets[0] ?? null;
-    debug("selection by single budget =>", selected ? { id: (selected as { id?: string }).id, name: (selected as { name?: string }).name } : null);
-  } else {
-    debug("no selector and", budgets.length, "budgets => no selection");
-  }
+  let selected = findBudgetBySelector(budgets as BudgetRecord[], opts);
+  debug(
+    "selection by selectors =>",
+    selected ? { id: selected.id ?? null, name: selected.name } : null,
+  );
 
   if (!selected) {
     debug("pickAndLoadBudget: no budget selected, returning null");
@@ -103,17 +138,23 @@ async function pickAndLoadBudget(opts: ConnectionOptions) {
   }
 
   if (!selected.id) {
-    const syncId = (selected as { groupId?: string }).groupId ?? opts.syncId;
+    const syncId =
+      (selected as { groupId?: string; cloudFileId?: string }).groupId ??
+      (selected as { cloudFileId?: string }).cloudFileId ??
+      opts.syncId;
     debug("selected budget has no local id; syncId for download:", syncId);
     if (syncId) {
       await downloadBudget(syncId, opts.password ? { password: opts.password } : undefined);
       budgets = await getBudgets();
-      selected = opts.budgetId
-        ? (budgets.find((b) => b.id === opts.budgetId) ?? null)
-        : opts.budgetName
-          ? byName(opts.budgetName)
-          : (budgets.find((b) => (b as { groupId?: string }).groupId === syncId) ?? null);
-      debug("after download, selected =>", selected ? { id: (selected as { id?: string }).id, name: (selected as { name?: string }).name } : null);
+      selected = findBudgetBySelector(budgets as BudgetRecord[], {
+        budgetId: opts.budgetId,
+        budgetName: opts.budgetName,
+        syncId,
+      });
+      debug(
+        "after download, selected =>",
+        selected ? { id: selected.id ?? null, name: selected.name } : null,
+      );
     }
   }
 
@@ -234,7 +275,15 @@ export async function selectBudgetByIdOrSyncId(opts: {
 export async function initActual(opts: ConnectionOptions): Promise<void> {
   debug("initActual called; initialized=", initialized);
   if (initialized) {
-    debug("initActual: already initialized, skipping");
+    debug("initActual: already initialized");
+    if (!budgetLoaded && hasBudgetSelection(opts)) {
+      debug("initActual: budget not loaded yet; retrying pickAndLoadBudget");
+      const selected = await pickAndLoadBudget(opts);
+      if (selected?.id) {
+        currentBudgetId = selected.id;
+        budgetLoaded = true;
+      }
+    }
     return;
   }
 
