@@ -1,8 +1,16 @@
 import { existsSync, watch } from "node:fs";
 import { extname, join } from "node:path";
 
-import { closeActual, importIntoAccount, initActual, listAccounts } from "../actual/client";
+import { closeActual, importIntoAccount, initActual, isBudgetLoaded, listAccounts } from "../actual/client";
 import { formatForUser } from "../errors";
+
+const DEBUG = process.env.ACTUAL_IMPORT_DEBUG === "1" || process.env.ACTUAL_IMPORT_DEBUG === "true";
+function debug(...args: unknown[]) {
+  if (DEBUG) {
+    const prefix = `[cli] ${new Date().toISOString()}`;
+    console.error(prefix, ...args);
+  }
+}
 import { resolveAccountByNameOrId } from "../import/accounts";
 import { mapRowsForImport } from "../import/mapping";
 import { buildPreviewPayload, parseAndNormalizeFile } from "../import/parse";
@@ -32,9 +40,23 @@ export async function executeImportCommand(
   file: string,
   options: ValidatedCliOptions,
 ): Promise<{ accounts: Awaited<ReturnType<typeof listAccounts>> } | null> {
+  debug("executeImportCommand: start", { file });
+
   if (!existsSync(file)) {
+    debug("executeImportCommand: file not found, throwing");
     throw new Error(`File not found: "${file}"`);
   }
+  debug("executeImportCommand: file exists");
+
+  debug("executeImportCommand: calling initActual with", {
+    serverURL: options.serverUrl,
+    dataDir: options.dataDir ?? "(default)",
+    budgetId: options.budgetId ?? "(none)",
+    budgetName: options.budgetName ?? "(none)",
+    syncId: options.syncId ?? "(none)",
+    hasPassword: Boolean(options.password),
+    hasSessionToken: Boolean(options.sessionToken),
+  });
 
   await initActual({
     dataDir: options.dataDir,
@@ -45,16 +67,32 @@ export async function executeImportCommand(
     budgetName: options.budgetName,
     syncId: options.syncId,
   });
+  debug("executeImportCommand: initActual() returned");
+
+  if (!isBudgetLoaded()) {
+    debug("executeImportCommand: initActual returned but isBudgetLoaded() is false");
+    throw new Error(
+      "No budget selected. Pass --budget-id, --budget-name, or --sync-id (or set ACTUAL_BUDGET_ID, ACTUAL_BUDGET_NAME, or ACTUAL_SYNC_ID). " +
+        "If you have only one budget it is selected automatically.",
+    );
+  }
+  debug("executeImportCommand: budget is loaded");
 
   const accounts = await listAccounts();
+  debug("executeImportCommand: listAccounts() returned", accounts.length, "accounts:", accounts.map((a) => ({ id: a.id, name: a.name })));
+
   if (accounts.length === 0) {
+    debug("executeImportCommand: no accounts in budget, throwing");
     throw new Error(
       "No accounts found in the budget.\n\nCreate at least one account in Actual Budget before importing transactions.",
     );
   }
 
   const defaultAccount = resolveAccountByNameOrId(accounts, options.defaultAccount);
+  debug("executeImportCommand: defaultAccount resolved", { defaultAccount: options.defaultAccount ?? "(none)", resolvedId: defaultAccount?.id, resolvedName: defaultAccount?.name });
+
   if (options.defaultAccount && !defaultAccount) {
+    debug("executeImportCommand: default account not found, throwing");
     throw new Error(
       `Default account "${options.defaultAccount}" not found.\n\nUse an existing account name or ID. Available accounts: ${accounts.map((a) => a.name).join(", ")}`,
     );
@@ -63,8 +101,11 @@ export async function executeImportCommand(
   const fieldMapping = parseFieldMapping(parseKeyValue(options.mapField), options.accountColumn);
   const accountValueMap = parseKeyValue(options.mapAccount);
   const parseOptions = parseFileOptions(options);
+  debug("executeImportCommand: built fieldMapping, accountValueMap, parseOptions");
 
   const { rows, errors, format } = await parseAndNormalizeFile(file, parseOptions);
+  debug("executeImportCommand: parseAndNormalizeFile() returned", { rows: rows.length, errors: errors.length, format });
+
   const preview = buildPreviewPayload(rows, errors, format);
   const mappingRequest: MappingRequest = {
     fieldMapping,
@@ -72,9 +113,17 @@ export async function executeImportCommand(
     accountValueMap,
     amountOptions: parseAmountOptions(options),
   };
+  debug("executeImportCommand: built preview and mappingRequest");
 
   const mapped = mapRowsForImport(rows, accounts, mappingRequest);
+  debug("executeImportCommand: mapRowsForImport() returned", {
+    byAccountIdSize: mapped.byAccountId.size,
+    rowErrors: mapped.rowErrors.length,
+    totalMapped: Array.from(mapped.byAccountId.values()).reduce((s, r) => s + r.length, 0),
+  });
+
   if (mapped.rowErrors.length > 0 && !options.allowPartial) {
+    debug("executeImportCommand: mapping errors and !allowPartial, returning null");
     if (options.json) {
       console.log(
         JSON.stringify(
@@ -102,15 +151,19 @@ export async function executeImportCommand(
   const importResults: Array<{ accountId: string; imported: number; result: unknown }> = [];
   for (const [accountId, txns] of mapped.byAccountId.entries()) {
     if (txns.length === 0) {
+      debug("executeImportCommand: skip accountId (no txns)", accountId);
       continue;
     }
+    debug("executeImportCommand: importIntoAccount", { accountId, txnsCount: txns.length, dryRun: options.dryRun });
     const result = await importIntoAccount(accountId, txns, options.dryRun);
     importResults.push({
       accountId,
       imported: txns.length,
       result,
     });
+    debug("executeImportCommand: importIntoAccount done", { accountId, imported: txns.length });
   }
+  debug("executeImportCommand: all imports done, importResults.length =", importResults.length);
 
   const output = {
     status: "ok",
@@ -125,6 +178,7 @@ export async function executeImportCommand(
     imports: importResults,
     dryRun: options.dryRun,
   };
+  debug("executeImportCommand: output built", { format: output.format, totalRows: output.totalRows, mappedRows: output.imports.length });
 
   if (options.json) {
     console.log(JSON.stringify(output, null, 2));
@@ -146,6 +200,7 @@ export async function executeImportCommand(
     }
   }
 
+  debug("executeImportCommand: done, returning accounts count =", accounts.length);
   return { accounts };
 }
 
