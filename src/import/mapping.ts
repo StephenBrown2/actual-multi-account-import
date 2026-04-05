@@ -1,4 +1,4 @@
-import { internal } from "@actual-app/api";
+import { utils } from "@actual-app/api";
 
 import type {
   AccountRef,
@@ -40,7 +40,7 @@ function parseMoney(raw: string | number | undefined): number | null {
     return null;
   }
   if (typeof raw === "number" && Number.isFinite(raw)) {
-    return internal.amountToInteger(raw);
+    return utils.amountToInteger(raw);
   }
 
   const source = String(raw ?? "").trim();
@@ -60,7 +60,7 @@ function parseMoney(raw: string | number | undefined): number | null {
   if (!Number.isFinite(amount)) {
     return null;
   }
-  return internal.amountToInteger(amount);
+  return utils.amountToInteger(amount);
 }
 
 function parseBoolean(raw: string | undefined): boolean | undefined {

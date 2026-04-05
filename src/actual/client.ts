@@ -5,7 +5,6 @@ import {
   getBudgets,
   importTransactions,
   init,
-  internal,
   loadBudget,
   shutdown,
 } from "@actual-app/api";
@@ -33,9 +32,18 @@ type BudgetRecord = {
   cloudFileId?: string;
 };
 
+type ActualInternalApi = {
+  send: (name: string, args: unknown) => Promise<unknown>;
+};
+
 let initialized = false;
 let budgetLoaded = false;
 let currentBudgetId: string | null = null;
+let actualApi: ActualInternalApi | null = null;
+
+function getActualApi(): ActualInternalApi | null {
+  return actualApi;
+}
 
 async function ensureDataDirExists(dataDir?: string) {
   if (!dataDir) {
@@ -315,7 +323,8 @@ export async function initActual(opts: ConnectionOptions): Promise<void> {
       };
 
   debug("initActual: calling init( { dataDir, serverURL, auth } )");
-  await init(initConfig);
+  const liveApi = await init(initConfig);
+  actualApi = liveApi as ActualInternalApi;
   currentBudgetId = null;
   budgetLoaded = false;
   initialized = true;
@@ -338,6 +347,7 @@ export async function closeActual(): Promise<void> {
   initialized = false;
   budgetLoaded = false;
   currentBudgetId = null;
+  actualApi = null;
 }
 
 export async function listAccounts(): Promise<AccountRef[]> {
@@ -381,18 +391,16 @@ export async function parseFileWithActual(
     throw new Error("No budget loaded. Select a budget first.");
   }
 
-  const actualInternal = internal as {
-    send?: (channel: string, payload: unknown) => Promise<unknown>;
-  } | null;
-  debug("parseFileWithActual: internal.send available?", Boolean(actualInternal?.send));
-  if (!actualInternal?.send) {
+  const api = getActualApi();
+  debug("parseFileWithActual: api.send available?", Boolean(api?.send));
+  if (!api?.send) {
     throw new Error(
-      "Actual parser is unavailable after budget load. internal.send is missing; check the preceding ACTUAL_IMPORT_DEBUG logs for init/loadBudget state.",
+      "Actual parser is unavailable after budget load. API send function is missing; check the preceding ACTUAL_IMPORT_DEBUG logs for init/loadBudget state.",
     );
   }
 
   try {
-    const result = (await actualInternal.send("transactions-parse-file", {
+    const result = (await api.send("transactions-parse-file", {
       filepath,
       options,
     })) as ParsedFileResult;
