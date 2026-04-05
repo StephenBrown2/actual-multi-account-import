@@ -110,13 +110,20 @@ async function pickAndLoadBudget(opts: ConnectionOptions) {
   });
 
   let budgets = await getBudgets();
-  debug("getBudgets() returned", budgets.length, "budget(s):", budgets.map((b) => {
-    const r = b as { id?: string; name?: string; groupId?: string; cloudFileId?: string };
-    return { id: r.id ?? null, name: r.name, groupId: r.groupId, cloudFileId: r.cloudFileId };
-  }));
+  debug(
+    "getBudgets() returned",
+    budgets.length,
+    "budget(s):",
+    budgets.map((b) => {
+      const r = b as { id?: string; name?: string; groupId?: string; cloudFileId?: string };
+      return { id: r.id ?? null, name: r.name, groupId: r.groupId, cloudFileId: r.cloudFileId };
+    }),
+  );
 
   if (opts.syncId) {
-    const exists = budgets.some((budget) => budgetMatchesSyncId(budget as BudgetRecord, opts.syncId!));
+    const exists = budgets.some((budget) =>
+      budgetMatchesSyncId(budget as BudgetRecord, opts.syncId!),
+    );
     debug("syncId provided; already downloaded?", exists);
     if (!exists) {
       debug("downloading budget for syncId", opts.syncId);
@@ -172,7 +179,12 @@ async function pickAndLoadBudget(opts: ConnectionOptions) {
   await loadBudget(selected.id);
   currentBudgetId = selected.id;
   budgetLoaded = true;
-  debug("pickAndLoadBudget: done. currentBudgetId=", currentBudgetId, "budgetLoaded=", budgetLoaded);
+  debug(
+    "pickAndLoadBudget: done. currentBudgetId=",
+    currentBudgetId,
+    "budgetLoaded=",
+    budgetLoaded,
+  );
   return selected;
 }
 
@@ -329,7 +341,14 @@ export async function closeActual(): Promise<void> {
 }
 
 export async function listAccounts(): Promise<AccountRef[]> {
-  debug("listAccounts: initialized=", initialized, "budgetLoaded=", budgetLoaded, "currentBudgetId=", currentBudgetId);
+  debug(
+    "listAccounts: initialized=",
+    initialized,
+    "budgetLoaded=",
+    budgetLoaded,
+    "currentBudgetId=",
+    currentBudgetId,
+  );
   if (!budgetLoaded) {
     debug("listAccounts: throwing (no budget loaded)");
     throw new Error("No budget loaded. Select a budget first.");

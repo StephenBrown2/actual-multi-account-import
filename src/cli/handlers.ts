@@ -1,7 +1,13 @@
 import { existsSync, watch } from "node:fs";
 import { extname, join } from "node:path";
 
-import { closeActual, importIntoAccount, initActual, isBudgetLoaded, listAccounts } from "../actual/client";
+import {
+  closeActual,
+  importIntoAccount,
+  initActual,
+  isBudgetLoaded,
+  listAccounts,
+} from "../actual/client";
 import { formatForUser } from "../errors";
 
 const DEBUG = process.env.ACTUAL_IMPORT_DEBUG === "1" || process.env.ACTUAL_IMPORT_DEBUG === "true";
@@ -79,7 +85,12 @@ export async function executeImportCommand(
   debug("executeImportCommand: budget is loaded");
 
   const accounts = await listAccounts();
-  debug("executeImportCommand: listAccounts() returned", accounts.length, "accounts:", accounts.map((a) => ({ id: a.id, name: a.name })));
+  debug(
+    "executeImportCommand: listAccounts() returned",
+    accounts.length,
+    "accounts:",
+    accounts.map((a) => ({ id: a.id, name: a.name })),
+  );
 
   if (accounts.length === 0) {
     debug("executeImportCommand: no accounts in budget, throwing");
@@ -89,7 +100,11 @@ export async function executeImportCommand(
   }
 
   const defaultAccount = resolveAccountByNameOrId(accounts, options.defaultAccount);
-  debug("executeImportCommand: defaultAccount resolved", { defaultAccount: options.defaultAccount ?? "(none)", resolvedId: defaultAccount?.id, resolvedName: defaultAccount?.name });
+  debug("executeImportCommand: defaultAccount resolved", {
+    defaultAccount: options.defaultAccount ?? "(none)",
+    resolvedId: defaultAccount?.id,
+    resolvedName: defaultAccount?.name,
+  });
 
   if (options.defaultAccount && !defaultAccount) {
     debug("executeImportCommand: default account not found, throwing");
@@ -104,7 +119,11 @@ export async function executeImportCommand(
   debug("executeImportCommand: built fieldMapping, accountValueMap, parseOptions");
 
   const { rows, errors, format } = await parseAndNormalizeFile(file, parseOptions);
-  debug("executeImportCommand: parseAndNormalizeFile() returned", { rows: rows.length, errors: errors.length, format });
+  debug("executeImportCommand: parseAndNormalizeFile() returned", {
+    rows: rows.length,
+    errors: errors.length,
+    format,
+  });
 
   const preview = buildPreviewPayload(rows, errors, format);
   const mappingRequest: MappingRequest = {
@@ -154,7 +173,11 @@ export async function executeImportCommand(
       debug("executeImportCommand: skip accountId (no txns)", accountId);
       continue;
     }
-    debug("executeImportCommand: importIntoAccount", { accountId, txnsCount: txns.length, dryRun: options.dryRun });
+    debug("executeImportCommand: importIntoAccount", {
+      accountId,
+      txnsCount: txns.length,
+      dryRun: options.dryRun,
+    });
     const result = await importIntoAccount(accountId, txns, options.dryRun);
     importResults.push({
       accountId,
@@ -178,7 +201,11 @@ export async function executeImportCommand(
     imports: importResults,
     dryRun: options.dryRun,
   };
-  debug("executeImportCommand: output built", { format: output.format, totalRows: output.totalRows, mappedRows: output.imports.length });
+  debug("executeImportCommand: output built", {
+    format: output.format,
+    totalRows: output.totalRows,
+    mappedRows: output.imports.length,
+  });
 
   if (options.json) {
     console.log(JSON.stringify(output, null, 2));
