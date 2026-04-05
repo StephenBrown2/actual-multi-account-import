@@ -8,6 +8,10 @@ export type UserFacingError = {
   hint?: string;
 };
 
+function isDebugEnabled(): boolean {
+  return process.env.ACTUAL_IMPORT_DEBUG === "1" || process.env.ACTUAL_IMPORT_DEBUG === "true";
+}
+
 function extractMessage(err: unknown): string {
   if (err instanceof Error) {
     return err.message;
@@ -19,6 +23,29 @@ function extractMessage(err: unknown): string {
     if (typeof o.msg === "string") return o.msg;
   }
   return String(err);
+}
+
+function extractDebugLocation(err: unknown): string | undefined {
+  if (!(err instanceof Error) || !err.stack) {
+    return undefined;
+  }
+
+  const frames = err.stack
+    .split("\n")
+    .slice(1)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const preferred =
+    frames.find(
+      (line) =>
+        !line.includes("node:internal") &&
+        !line.includes("node_modules") &&
+        !line.includes("bun:") &&
+        !line.includes("<anonymous>"),
+    ) ?? frames[0];
+
+  return preferred?.replace(/^at\s+/, "");
 }
 
 /**
@@ -129,8 +156,11 @@ export function toUserFacingError(err: unknown): UserFacingError {
 
 export function formatForUser(err: unknown): string {
   const { message, hint } = toUserFacingError(err);
-  if (hint) {
-    return `${message}\n\n${hint}`;
+  const location = isDebugEnabled() ? extractDebugLocation(err) : undefined;
+  if (hint || location) {
+    return [message, hint, location ? `Debug location: ${location}` : undefined]
+      .filter(Boolean)
+      .join("\n\n");
   }
   return message;
 }

@@ -38,4 +38,29 @@ describe("formatForUser", () => {
     );
     expect(formatForUser(new Error("permission denied"))).toContain("read permission");
   });
+
+  test("includes debug location when ACTUAL_IMPORT_DEBUG is enabled", () => {
+    const previous = process.env.ACTUAL_IMPORT_DEBUG;
+    process.env.ACTUAL_IMPORT_DEBUG = "true";
+
+    const error = new Error("boom");
+    error.stack = [
+      "Error: boom",
+      "    at parseFileWithActual (/workspace/src/actual/client.ts:390:15)",
+      "    at node:internal/process/task_queues:95:5",
+    ].join("\n");
+
+    const formatted = formatForUser(error);
+
+    expect(formatted).toContain("boom");
+    expect(formatted).toContain(
+      "Debug location: parseFileWithActual (/workspace/src/actual/client.ts:390:15)",
+    );
+
+    if (previous === undefined) {
+      delete process.env.ACTUAL_IMPORT_DEBUG;
+    } else {
+      process.env.ACTUAL_IMPORT_DEBUG = previous;
+    }
+  });
 });

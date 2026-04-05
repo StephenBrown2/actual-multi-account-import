@@ -367,14 +367,47 @@ export async function parseFileWithActual(
   filepath: string,
   options: ParseFileOptions,
 ): Promise<ParsedFileResult> {
+  debug("parseFileWithActual: start", {
+    filepath,
+    hasHeaderRow: options.hasHeaderRow,
+    delimiter: options.delimiter ?? "(auto)",
+    skipStartLines: options.skipStartLines ?? 0,
+    skipEndLines: options.skipEndLines ?? 0,
+    importNotes: options.importNotes,
+    fallbackMissingPayeeToMemo: options.fallbackMissingPayeeToMemo,
+    currentBudgetId,
+  });
   if (!budgetLoaded) {
     throw new Error("No budget loaded. Select a budget first.");
   }
-  const result = (await internal.send("transactions-parse-file", {
-    filepath,
-    options,
-  })) as ParsedFileResult;
-  return result;
+
+  const actualInternal = internal as {
+    send?: (channel: string, payload: unknown) => Promise<unknown>;
+  } | null;
+  debug("parseFileWithActual: internal.send available?", Boolean(actualInternal?.send));
+  if (!actualInternal?.send) {
+    throw new Error(
+      "Actual parser is unavailable after budget load. internal.send is missing; check the preceding ACTUAL_IMPORT_DEBUG logs for init/loadBudget state.",
+    );
+  }
+
+  try {
+    const result = (await actualInternal.send("transactions-parse-file", {
+      filepath,
+      options,
+    })) as ParsedFileResult;
+    debug("parseFileWithActual: parser returned", {
+      transactions: result.transactions?.length ?? 0,
+      errors: result.errors?.length ?? 0,
+    });
+    return result;
+  } catch (error) {
+    debug(
+      "parseFileWithActual: parser threw",
+      error instanceof Error ? (error.stack ?? error.message) : error,
+    );
+    throw error;
+  }
 }
 
 export async function importIntoAccount(
