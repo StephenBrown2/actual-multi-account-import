@@ -31,6 +31,115 @@ import {
 
 const WATCH_EXTENSIONS = new Set([".csv", ".tsv", ".qif", ".ofx", ".qfx", ".xml"]);
 
+function normalizeAccountKey(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function collectAccountValues(
+  rows: Array<{ raw: Record<string, string>; structured: { account?: string | null } | null }>,
+  accountColumn?: string,
+): string[] {
+  const values = new Set<string>();
+  for (const row of rows) {
+    const fromStructured = row.structured?.account?.trim();
+    if (fromStructured) {
+      values.add(fromStructured);
+      continue;
+    }
+    if (!accountColumn) {
+      continue;
+    }
+    const fromRaw = row.raw[accountColumn]?.trim();
+    if (fromRaw) {
+      values.add(fromRaw);
+    }
+  }
+  return Array.from(values.values());
+}
+
+function findClosestAccounts(value: string, accountNames: string[]): string[] {
+  const normalized = normalizeAccountKey(value);
+  if (!normalized) {
+    return [];
+  }
+
+  const directContains = accountNames.filter((name) => {
+    const account = normalizeAccountKey(name);
+    return account.includes(normalized) || normalized.includes(account);
+  });
+  if (directContains.length > 0) {
+    return directContains.slice(0, 3);
+  }
+
+  return accountNames
+    .filter((name) => {
+      const parts = normalizeAccountKey(name).split(" ").filter(Boolean);
+      return parts.some((part) => normalized.includes(part));
+    })
+    .slice(0, 3);
+}
+
+function warnUnresolvedAccountsBeforeMapping(params: {
+  rows: Array<{ raw: Record<string, string>; structured: { account?: string | null } | null }>;
+  accountColumn?: string;
+  accountValueMap: Record<string, string>;
+  accounts: Array<{ id: string; name: string }>;
+  defaultAccountId?: string;
+}): void {
+  const { rows, accountColumn, accountValueMap, accounts, defaultAccountId } = params;
+
+  const accountValues = collectAccountValues(rows, accountColumn);
+  if (accountValues.length === 0) {
+    return;
+  }
+
+  const byId = new Set(accounts.map((a) => a.id));
+  const byName = new Set(accounts.map((a) => normalizeAccountKey(a.name)));
+  const accountNames = accounts.map((a) => a.name);
+  const normalizedMap = new Map<string, string>(
+    Object.entries(accountValueMap).map(([from, to]) => [normalizeAccountKey(from), to]),
+  );
+
+  const unresolved: Array<{ value: string; hints: string[] }> = [];
+  for (const value of accountValues) {
+    const normalizedValue = normalizeAccountKey(value);
+    const explicitTarget = normalizedMap.get(normalizedValue);
+
+    const resolvableByMap =
+      explicitTarget !== undefined &&
+      (byId.has(explicitTarget) || byName.has(normalizeAccountKey(explicitTarget)));
+    const resolvableDirect = byId.has(value) || byName.has(normalizedValue);
+    const resolvableByDefault = !value.trim() && Boolean(defaultAccountId);
+
+    if (!resolvableByMap && !resolvableDirect && !resolvableByDefault) {
+      unresolved.push({
+        value,
+        hints: findClosestAccounts(value, accountNames),
+      });
+    }
+  }
+
+  if (unresolved.length === 0) {
+    return;
+  }
+
+  console.warn(
+    `Account mapping preflight warning: ${unresolved.length} account value(s) in this file may fail to resolve.`,
+  );
+  for (const item of unresolved.slice(0, 10)) {
+    const hintText = item.hints.length > 0 ? ` (closest: ${item.hints.join(", ")})` : "";
+    console.warn(`  - ${item.value}${hintText}`);
+  }
+  if (unresolved.length > 10) {
+    console.warn(`  - ...and ${unresolved.length - 10} more`);
+  }
+}
+
 export type CliDependencies = {
   executeImportCommand: typeof executeImportCommand;
   closeActual: typeof closeActual;
@@ -123,6 +232,14 @@ export async function executeImportCommand(
     rows: rows.length,
     errors: errors.length,
     format,
+  });
+
+  warnUnresolvedAccountsBeforeMapping({
+    rows,
+    accountColumn: fieldMapping.account,
+    accountValueMap,
+    accounts,
+    defaultAccountId: defaultAccount?.id,
   });
 
   const preview = buildPreviewPayload(rows, errors, format);

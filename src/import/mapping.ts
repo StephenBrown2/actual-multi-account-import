@@ -14,9 +14,19 @@ import type {
 type ResolveAccountContext = {
   byId: Map<string, AccountRef>;
   byName: Map<string, AccountRef>;
-  mapping: Record<string, string>;
+  mapping: Map<string, string>;
   defaultAccountId?: string;
+  accountNames: string[];
 };
+
+function normalizeAccountKey(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
 
 function normalizeDate(value: string): string | null {
   const trimmed = value.trim();
@@ -92,16 +102,17 @@ function resolveAccountId(
   if (!trimmed) {
     return ctx.defaultAccountId ?? null;
   }
+  const normalized = normalizeAccountKey(trimmed);
 
   // 1) Explicit account-value map is highest priority.
-  const explicitMapTarget = ctx.mapping[trimmed];
+  const explicitMapTarget = ctx.mapping.get(normalized);
   if (explicitMapTarget) {
     const mappedById = ctx.byId.get(explicitMapTarget);
     if (mappedById) {
       return mappedById.id;
     }
 
-    const mappedByName = ctx.byName.get(explicitMapTarget.toLowerCase());
+    const mappedByName = ctx.byName.get(normalizeAccountKey(explicitMapTarget));
     if (mappedByName) {
       return mappedByName.id;
     }
@@ -113,7 +124,7 @@ function resolveAccountId(
     return byId.id;
   }
 
-  const byName = ctx.byName.get(trimmed.toLowerCase());
+  const byName = ctx.byName.get(normalized);
   if (byName) {
     return byName.id;
   }
@@ -258,12 +269,41 @@ function buildAccountContext(
   accounts: AccountRef[],
   request: MappingRequest,
 ): ResolveAccountContext {
+  const normalizedMap = new Map<string, string>();
+  for (const [from, to] of Object.entries(request.accountValueMap ?? {})) {
+    normalizedMap.set(normalizeAccountKey(from), to);
+  }
+
   return {
     byId: new Map(accounts.map((account) => [account.id, account])),
-    byName: new Map(accounts.map((account) => [account.name.toLowerCase(), account])),
-    mapping: request.accountValueMap ?? {},
+    byName: new Map(accounts.map((account) => [normalizeAccountKey(account.name), account])),
+    mapping: normalizedMap,
     defaultAccountId: request.defaultAccountId,
+    accountNames: accounts.map((a) => a.name),
   };
+}
+
+function findAccountHints(value: string | undefined, accountNames: string[]): string[] {
+  const normalizedValue = normalizeAccountKey(value ?? "");
+  if (!normalizedValue) {
+    return [];
+  }
+
+  const directContains = accountNames.filter((name) => {
+    const normalized = normalizeAccountKey(name);
+    return normalized.includes(normalizedValue) || normalizedValue.includes(normalized);
+  });
+  if (directContains.length > 0) {
+    return directContains.slice(0, 3);
+  }
+
+  return accountNames
+    .filter((name) =>
+      normalizeAccountKey(name)
+        .split(" ")
+        .some((part) => normalizedValue.includes(part)),
+    )
+    .slice(0, 3);
 }
 
 export function mapRowsForImport(
@@ -291,9 +331,11 @@ export function mapRowsForImport(
       row.structured?.account ?? getMappedValue(row.raw, request.fieldMapping.account);
     const accountId = resolveAccountId(accountValue ?? undefined, ctx);
     if (!accountId) {
+      const hints = findAccountHints(accountValue, ctx.accountNames);
+      const hintText = hints.length > 0 ? ` (closest: ${hints.join(", ")})` : "";
       rowErrors.push({
         rowNumber: row.rowNumber,
-        message: `Could not resolve account for value "${accountValue ?? ""}"`,
+        message: `Could not resolve account for value "${accountValue ?? ""}"${hintText}`,
       });
       continue;
     }

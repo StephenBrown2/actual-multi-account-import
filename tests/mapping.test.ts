@@ -113,6 +113,35 @@ describe("mapRowsForImport", () => {
     expect(result.byAccountId.get("acct-savings")).toHaveLength(1);
   });
 
+  test("normalizes account map keys and account names for matching", () => {
+    const rows: NormalizedRow[] = [
+      {
+        rowNumber: 1,
+        structured: null,
+        raw: {
+          Date: "2026-02-01",
+          Amount: "2.50",
+          SourceAcct: "SoFi   Savings\u00A0Account",
+        },
+      },
+    ];
+
+    const normalizedAccounts = [...accounts, { id: "acct-sofi", name: "SoFi Savings Account" }];
+
+    const request: MappingRequest = {
+      fieldMapping: {
+        date: "Date",
+        amount: "Amount",
+        account: "SourceAcct",
+      },
+      accountValueMap: { "sofi savings account": "SoFi Savings Account" },
+    };
+
+    const result = mapRowsForImport(rows, normalizedAccounts, request);
+    expect(result.rowErrors).toHaveLength(0);
+    expect(result.byAccountId.get("acct-sofi")).toHaveLength(1);
+  });
+
   test("applies in/out mode, cleared parsing, and notes mapping", () => {
     const rows: NormalizedRow[] = [
       {
@@ -265,6 +294,37 @@ describe("mapRowsForImport", () => {
       {
         rowNumber: 2,
         message: 'Could not resolve account for value "Unknown"',
+      },
+    ]);
+  });
+
+  test("includes closest account hints for unresolved values", () => {
+    const rows: NormalizedRow[] = [
+      {
+        rowNumber: 1,
+        structured: null,
+        raw: {
+          Date: "2026-02-01",
+          Amount: "12.34",
+          AccountName: "Savings Account",
+        },
+      },
+    ];
+
+    const request: MappingRequest = {
+      fieldMapping: {
+        date: "Date",
+        amount: "Amount",
+        account: "AccountName",
+      },
+    };
+
+    const result = mapRowsForImport(rows, accounts, request);
+    expect(result.byAccountId.size).toBe(0);
+    expect(result.rowErrors).toEqual([
+      {
+        rowNumber: 1,
+        message: 'Could not resolve account for value "Savings Account" (closest: Savings)',
       },
     ]);
   });
