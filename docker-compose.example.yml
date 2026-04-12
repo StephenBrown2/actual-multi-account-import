@@ -34,6 +34,7 @@ services:
     #   npm run cli -- import /imports/transactions.csv
     #   # If you set ACTUAL_BUDGET_* / ACTUAL_SYNC_ID in environment,
     #   # do not pass --budget-id/--budget-name/--sync-id flags here.
+    #   # --map-account orientation: <import file account value>=<Actual account name or id>
     #   --server-url https://your-actual-server.com
     #   --password your-password
     #   --budget-name "Personal"
@@ -48,6 +49,7 @@ services:
     #   npm run cli -- watch /imports
     #   # If you set ACTUAL_BUDGET_* / ACTUAL_SYNC_ID in environment,
     #   # do not pass --budget-id/--budget-name/--sync-id flags here.
+    #   # --map-account orientation: <import file account value>=<Actual account name or id>
     #   --server-url https://your-actual-server.com
     #   --password your-password
     #   --budget-name "Personal"
