@@ -48,7 +48,9 @@ function addCommonOptions(command: CacCommand): CacCommand {
     .option("--out-value <string>", "Value in in/out column that means outflow (e.g. debit)")
     .option("--split-mode", "Use separate inflow and outflow columns")
     .option("--flip-amount", "Negate amounts (inflow↔outflow)")
-    .option("--multiplier-amount <n>", "Multiply amounts by this factor", { default: "1" });
+    .option("--multiplier-amount <n>", "Multiply amounts by this factor", { default: "1" })
+    .option("--before <YYYY-MM-DD>", "Exclude transactions after this date")
+    .option("--after <YYYY-MM-DD>", "Exclude transactions before this date");
 }
 
 export function buildProgram(deps: CliDependencies = defaultCliDependencies): CliProgram {

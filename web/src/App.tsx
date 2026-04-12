@@ -54,6 +54,8 @@ type SavedPreferences = Partial<{
   flipAmount: boolean;
   multiplierAmount: string;
   parseDateFormat: FormState["parseDateFormat"];
+  beforeDate: string;
+  afterDate: string;
 }>;
 
 function loadPreferences(budgetId: string): SavedPreferences | null {
@@ -82,6 +84,8 @@ function savePreferences(budgetId: string, form: FormState): void {
       flipAmount: form.flipAmount,
       multiplierAmount: form.multiplierAmount,
       parseDateFormat: form.parseDateFormat,
+      beforeDate: form.beforeDate,
+      afterDate: form.afterDate,
     };
     localStorage.setItem(`${PREFERENCES_STORAGE_KEY}:${budgetId}`, JSON.stringify(prefs));
   } catch {
@@ -91,6 +95,7 @@ function savePreferences(budgetId: string, form: FormState): void {
 
 type ImportApiResponse = {
   imports?: Array<{ accountId: string; count: number; result: unknown }>;
+  dateFilterExcludedRows?: number;
   error?: string;
   hint?: string;
   rowErrors?: Array<{ rowNumber: number; message: string }>;
@@ -123,6 +128,8 @@ type FormState = {
   flipAmount: boolean;
   multiplierAmount: string;
   parseDateFormat: DateFormat;
+  beforeDate: string;
+  afterDate: string;
   dryRun: boolean;
   allowPartial: boolean;
   file: File | null;
@@ -163,6 +170,8 @@ const INITIAL_FORM_STATE: FormState = {
   flipAmount: false,
   multiplierAmount: "",
   parseDateFormat: "mm dd yyyy",
+  beforeDate: "",
+  afterDate: "",
   dryRun: true,
   allowPartial: false,
   file: null,
@@ -525,6 +534,24 @@ function ImportSection({
   return (
     <section className="card">
       <h2>3) Import</h2>
+      <div className="grid">
+        <label>
+          After date (include on/after)
+          <input
+            type="date"
+            value={form.afterDate}
+            onChange={(event) => onPatch({ afterDate: event.target.value })}
+          />
+        </label>
+        <label>
+          Before date (include on/before)
+          <input
+            type="date"
+            value={form.beforeDate}
+            onChange={(event) => onPatch({ beforeDate: event.target.value })}
+          />
+        </label>
+      </div>
       <div className="actions">
         <label>
           <input
@@ -572,6 +599,7 @@ export function App(): React.JSX.Element {
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [transactions, setTransactions] = useState<ImportTransaction[]>([]);
   const [result, setResult] = useState<string | null>(null);
+  const [dateFilterExcludedRows, setDateFilterExcludedRows] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, dispatch] = useReducer(formReducer, INITIAL_FORM_STATE);
 
@@ -816,6 +844,7 @@ export function App(): React.JSX.Element {
 
   async function onImport(): Promise<void> {
     setError(null);
+    setDateFilterExcludedRows(null);
 
     if (!preview) {
       setError(
@@ -850,6 +879,8 @@ export function App(): React.JSX.Element {
             flipAmount: form.flipAmount,
             multiplierAmount: form.multiplierAmount,
           },
+          beforeDate: form.beforeDate || undefined,
+          afterDate: form.afterDate || undefined,
           dryRun: form.dryRun,
           allowPartial: form.allowPartial,
         }),
@@ -868,6 +899,9 @@ export function App(): React.JSX.Element {
         setError(parts.join("\n\n"));
         return;
       }
+      setDateFilterExcludedRows(
+        typeof data.dateFilterExcludedRows === "number" ? data.dateFilterExcludedRows : 0,
+      );
       setResult(JSON.stringify(data, null, 2));
       if (status?.currentBudgetId && !form.dryRun) {
         savePreferences(status.currentBudgetId, form);
@@ -1076,6 +1110,12 @@ export function App(): React.JSX.Element {
           {result !== null && (
             <section className="card">
               <h2>Result</h2>
+              {dateFilterExcludedRows !== null && (
+                <p>
+                  Date filter excluded <strong>{dateFilterExcludedRows}</strong> transaction(s)
+                  before import.
+                </p>
+              )}
               <pre>{result}</pre>
             </section>
           )}

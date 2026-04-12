@@ -18,6 +18,7 @@ function debug(...args: unknown[]) {
   }
 }
 import { resolveAccountByNameOrId } from "../import/accounts";
+import { applyDateFilter } from "../import/dateFilter";
 import { mapRowsForImport } from "../import/mapping";
 import { buildPreviewPayload, parseAndNormalizeFile } from "../import/parse";
 import type { MappingRequest } from "../types";
@@ -234,15 +235,31 @@ export async function executeImportCommand(
     format,
   });
 
+  const dateFiltered = applyDateFilter(rows, fieldMapping.date, {
+    beforeDate: options.before,
+    afterDate: options.after,
+  });
+  for (const warning of dateFiltered.warnings) {
+    console.warn(warning);
+  }
+  if (dateFiltered.excludedCount > 0) {
+    console.log(
+      `Date filter excluded ${dateFiltered.excludedCount} row(s) before mapping/import.` +
+        (dateFiltered.appliedAfterDate ? ` after=${dateFiltered.appliedAfterDate}` : "") +
+        (dateFiltered.appliedBeforeDate ? ` before=${dateFiltered.appliedBeforeDate}` : ""),
+    );
+  }
+  const filteredRows = dateFiltered.rows;
+
   warnUnresolvedAccountsBeforeMapping({
-    rows,
+    rows: filteredRows,
     accountColumn: fieldMapping.account,
     accountValueMap,
     accounts,
     defaultAccountId: defaultAccount?.id,
   });
 
-  const preview = buildPreviewPayload(rows, errors, format);
+  const preview = buildPreviewPayload(filteredRows, errors, format);
   const mappingRequest: MappingRequest = {
     fieldMapping,
     defaultAccountId: defaultAccount?.id,
@@ -251,7 +268,7 @@ export async function executeImportCommand(
   };
   debug("executeImportCommand: built preview and mappingRequest");
 
-  const mapped = mapRowsForImport(rows, accounts, mappingRequest);
+  const mapped = mapRowsForImport(filteredRows, accounts, mappingRequest);
   debug("executeImportCommand: mapRowsForImport() returned", {
     byAccountIdSize: mapped.byAccountId.size,
     rowErrors: mapped.rowErrors.length,

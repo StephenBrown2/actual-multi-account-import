@@ -28,6 +28,8 @@ export type CliOptions = {
   splitMode?: boolean;
   flipAmount?: boolean;
   multiplierAmount?: string;
+  before?: string;
+  after?: string;
 };
 
 export const cliOptionsSchema = z
@@ -57,6 +59,8 @@ export const cliOptionsSchema = z
     splitMode: z.boolean().optional(),
     flipAmount: z.boolean().optional(),
     multiplierAmount: z.string().optional(),
+    before: z.string().optional(),
+    after: z.string().optional(),
   })
   .superRefine((options, ctx) => {
     if (!options.password && !options.sessionToken) {
@@ -214,6 +218,8 @@ export function normalizeCliOptions(rawOptions: Record<string, unknown>): CliOpt
     splitMode: readOptionalFlag(rawOptions.splitMode),
     flipAmount: readOptionalFlag(rawOptions.flipAmount),
     multiplierAmount: readOptionalString(rawOptions.multiplierAmount) ?? "1",
+    before: readOptionalString(rawOptions.before),
+    after: readOptionalString(rawOptions.after),
   };
 }
 

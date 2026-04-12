@@ -120,6 +120,8 @@ Important options:
 - `--session-token`: use token auth instead of password
 - `--budget-id` / `--budget-name` / `--sync-id`: select budget (use exactly one)
 - `--map-account <from=to>`: map account values from the import file (left side) to Actual account name or ID (right side)
+- `--after <YYYY-MM-DD>`: exclude transactions before this date (keep on/after)
+- `--before <YYYY-MM-DD>`: exclude transactions after this date (keep on/before)
 - `--in-out-mode` + `--out-value <string>`: when your CSV has a single amount column plus an in/out indicator (e.g. "debit"/"credit"), use this to correctly classify transactions
 - `--split-mode`: use separate inflow and outflow columns instead of a single amount column
 - `--flip-amount`: negate all amounts (swap inflow↔outflow)
@@ -143,6 +145,12 @@ just cli watch ./imports \
 ```
 
 Use the same mapping options as the regular import. Press Ctrl+C to stop.
+
+Date filtering notes:
+
+- Date filters are applied after parsing and before transactions are sent to Actual.
+- If `--after` and `--before` are conflicting (or otherwise unusual, such as future dates), the app logs warnings.
+- In the web UI, matching `After date` and `Before date` selectors are available in the Import section.
 
 ## Docker
 

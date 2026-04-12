@@ -29,6 +29,7 @@ function asyncHandler(
   };
 }
 import { mapRowsForImport } from "./import/mapping";
+import { applyDateFilter } from "./import/dateFilter";
 import { buildPreviewPayload, parseAndNormalizeFile } from "./import/parse";
 import type { FieldMapping, MappingRequest, NormalizedRow, ParseFileOptions } from "./types";
 
@@ -52,6 +53,8 @@ type ImportBody = {
   mapping: FieldMapping;
   accountValueMap?: Record<string, string>;
   defaultAccountId?: string;
+  beforeDate?: string;
+  afterDate?: string;
   amountOptions?: {
     splitMode?: boolean;
     inOutMode?: boolean;
@@ -411,7 +414,15 @@ app.post(
         defaultAccountId: body.defaultAccountId,
         amountOptions: body.amountOptions,
       };
-      const mapped = mapRowsForImport(session.rows, accounts, mappingRequest);
+      const dateFiltered = applyDateFilter(session.rows, body.mapping?.date, {
+        beforeDate: body.beforeDate,
+        afterDate: body.afterDate,
+      });
+      for (const warning of dateFiltered.warnings) {
+        console.warn(`[api/import] ${warning}`);
+      }
+
+      const mapped = mapRowsForImport(dateFiltered.rows, accounts, mappingRequest);
       if (mapped.rowErrors.length > 0 && !body.allowPartial) {
         res.status(400).json({
           error:
@@ -430,6 +441,7 @@ app.post(
       res.json({
         ok: true,
         dryRun: Boolean(body.dryRun),
+        dateFilterExcludedRows: dateFiltered.excludedCount,
         importedRows: imports.reduce((sum, item) => sum + item.count, 0),
         rowErrors: mapped.rowErrors,
         imports,
