@@ -6,6 +6,7 @@ import { buildProgram } from "../src/cli/program";
 import { budgetSelectionTestUtils } from "../src/actual/client";
 import {
   assertRequiredOptions,
+  normalizeCliOptions,
   parseAmountOptions,
   parseFieldMapping,
   parseFileOptions,
@@ -144,6 +145,12 @@ describe("cli helpers", () => {
       flipAmount: true,
       multiplierAmount: "0.5",
     });
+  });
+
+  test("normalizeCliOptions accepts numeric values for skip lines (cac parses CLI numbers as integers)", () => {
+    const result = normalizeCliOptions({ skipStartLines: 1, skipEndLines: 2 });
+    expect(result.skipStartLines).toBe("1");
+    expect(result.skipEndLines).toBe("2");
   });
 
   test("parseFileOptions converts integer-like values and preserves flags", () => {

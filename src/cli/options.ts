@@ -174,7 +174,9 @@ export function parseFileOptions(options: CliOptions): ParseFileOptions {
 }
 
 function readOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  if (typeof value === "string" && value.length > 0) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return undefined;
 }
 
 function readOptionalFlag(value: unknown): true | undefined {
